@@ -4,139 +4,220 @@ import '../models/candle.dart';
 import '../utils/constants.dart';
 import 'storage_service.dart';
 
-/// Twelve Data API service for fetching market data.
+/// Unified API service supporting both Twelve Data and Alpha Vantage.
 ///
-/// All methods accept an optional [symbol] parameter (default: XAU/USD).
-/// This lets the app fetch data for any supported instrument — forex,
-/// commodities, crypto, or stocks.
+/// Reads the active provider from StorageService and routes all calls
+/// to the appropriate implementation. Screens call the same methods
+/// regardless of which provider is active.
 class ApiService {
   final StorageService _storage = StorageService();
 
-  /// Get the current API key (user-provided or default)
   Future<String> _getApiKey() async {
-    final key = await _storage.getApiKey();
-    return key.isNotEmpty ? key : AppConstants.defaultApiKey;
+    final provider = await _storage.getApiProvider();
+    if (provider == AppConstants.apiProviderAlphaVantage) {
+      return await _storage.getAlphaVantageKey();
+    }
+    return await _storage.getApiKey();
   }
 
-  /// Get the currently selected symbol from storage (or default XAU/USD)
   Future<String> _getSymbol({String? symbol}) async {
-    if (symbol != null) return symbol;
-    return await _storage.getSelectedSymbol();
+    return symbol ?? await _storage.getSelectedSymbol();
   }
 
-  /// Get current real-time price
+  Future<String> _getProvider() async => _storage.getApiProvider();
+
+  // ─── Public API ────────────────────────────────────────────────────────────
+
   Future<Map<String, dynamic>> getRealTimePrice({String? symbol}) async {
-    final apiKey = await _getApiKey();
+    final provider = await _getProvider();
     final sym = await _getSymbol(symbol: symbol);
-    final url = '${AppConstants.baseUrl}${AppConstants.priceEndpoint}'
-        '?symbol=$sym&apikey=$apiKey';
-
-    final response = await http.get(Uri.parse(url));
-    final data = json.decode(response.body);
-
-    if (data['status'] == 'error') {
-      throw Exception(data['message'] ?? 'Failed to fetch price');
+    if (provider == AppConstants.apiProviderAlphaVantage) {
+      return _avGetPrice(sym);
     }
-
-    return data;
+    return _tdGetPrice(sym);
   }
 
-  /// Get quote data (includes open, high, low, close, change, etc.)
   Future<Map<String, dynamic>> getQuote({String? symbol}) async {
-    final apiKey = await _getApiKey();
+    final provider = await _getProvider();
     final sym = await _getSymbol(symbol: symbol);
-    final url = '${AppConstants.baseUrl}${AppConstants.quoteEndpoint}'
-        '?symbol=$sym&apikey=$apiKey';
-
-    final response = await http.get(Uri.parse(url));
-    final data = json.decode(response.body);
-
-    if (data['status'] == 'error') {
-      throw Exception(data['message'] ?? 'Failed to fetch quote');
+    if (provider == AppConstants.apiProviderAlphaVantage) {
+      return _avGetQuote(sym);
     }
-
-    return data;
+    return _tdGetQuote(sym);
   }
 
-  /// Get historical candlestick data (time series)
   Future<List<Candle>> getTimeSeries({
     String interval = '1h',
     int outputsize = 200,
     String? symbol,
   }) async {
-    final apiKey = await _getApiKey();
+    final provider = await _getProvider();
     final sym = await _getSymbol(symbol: symbol);
-    final url = '${AppConstants.baseUrl}${AppConstants.timeSeriesEndpoint}'
-        '?symbol=$sym'
-        '&interval=$interval'
-        '&outputsize=$outputsize'
-        '&apikey=$apiKey';
-
-    final response = await http.get(Uri.parse(url));
-    final data = json.decode(response.body);
-
-    if (data['status'] == 'error') {
-      throw Exception(data['message'] ?? 'Failed to fetch time series');
+    if (provider == AppConstants.apiProviderAlphaVantage) {
+      return _avGetTimeSeries(sym, interval, outputsize);
     }
-
-    final values = data['values'] as List;
-    final candles = values.map((v) => Candle.fromTwelveData(v)).toList();
-    // Twelve Data returns newest first — reverse for chronological order
-    return candles.reversed.toList();
+    return _tdGetTimeSeries(sym, interval, outputsize);
   }
 
-  /// Get EMA value from Twelve Data API
-  Future<double> getEMA(int period, {String interval = '1h', String? symbol}) async {
-    final apiKey = await _getApiKey();
-    final sym = await _getSymbol(symbol: symbol);
-    final url = '${AppConstants.baseUrl}/ema'
-        '?symbol=$sym'
-        '&interval=$interval'
-        '&time_period=$period'
-        '&apikey=$apiKey';
-
-    final response = await http.get(Uri.parse(url));
-    final data = json.decode(response.body);
-
-    if (data['status'] == 'error') {
-      throw Exception(data['message'] ?? 'Failed to fetch EMA');
-    }
-
-    final values = data['values'] as List;
-    return double.parse(values[0]['ema'].toString());
-  }
-
-  /// Get RSI value from Twelve Data API
-  Future<double> getRSI({String interval = '1h', int period = 14, String? symbol}) async {
-    final apiKey = await _getApiKey();
-    final sym = await _getSymbol(symbol: symbol);
-    final url = '${AppConstants.baseUrl}/rsi'
-        '?symbol=$sym'
-        '&interval=$interval'
-        '&time_period=$period'
-        '&apikey=$apiKey';
-
-    final response = await http.get(Uri.parse(url));
-    final data = json.decode(response.body);
-
-    if (data['status'] == 'error') {
-      throw Exception(data['message'] ?? 'Failed to fetch RSI');
-    }
-
-    final values = data['values'] as List;
-    return double.parse(values[0]['rsi'].toString());
-  }
-
-  /// Check if the API key is valid by making a test request
-  Future<bool> validateApiKey(String apiKey) async {
+  Future<bool> validateApiKey(String apiKey, {bool isAlphaVantage = false}) async {
     try {
-      final url = '${AppConstants.baseUrl}${AppConstants.priceEndpoint}'
-          '?symbol=XAU/USD&apikey=$apiKey';
-      final response = await http.get(Uri.parse(url));
-      final data = json.decode(response.body);
-      return data['status'] != 'error';
+      if (isAlphaVantage) {
+        final url = '${AppConstants.alphaVantageBaseUrl}/query'
+            '?function=CURRENCY_EXCHANGE_RATE'
+            '&from_currency=XAU&to_currency=USD'
+            '&apikey=$apiKey';
+        final r = await http.get(Uri.parse(url));
+        final d = json.decode(r.body);
+        return d['Realtime Currency Exchange Rate'] != null;
+      }
+      final url = '${AppConstants.twelveDataBaseUrl}/price?symbol=XAU/USD&apikey=$apiKey';
+      final r = await http.get(Uri.parse(url));
+      final d = json.decode(r.body);
+      return d['status'] != 'error';
     } catch (_) {
       return false;
     }
+  }
+
+  // ─── Twelve Data ───────────────────────────────────────────────────────────
+
+  Future<Map<String, dynamic>> _tdGetPrice(String symbol) async {
+    final key = await _storage.getApiKey();
+    final url = '${AppConstants.twelveDataBaseUrl}/price?symbol=$symbol&apikey=$key';
+    final r = await http.get(Uri.parse(url));
+    final d = json.decode(r.body);
+    if (d['status'] == 'error') throw Exception(d['message'] ?? 'Twelve Data error');
+    return d;
+  }
+
+  Future<Map<String, dynamic>> _tdGetQuote(String symbol) async {
+    final key = await _storage.getApiKey();
+    final url = '${AppConstants.twelveDataBaseUrl}/quote?symbol=$symbol&apikey=$key';
+    final r = await http.get(Uri.parse(url));
+    final d = json.decode(r.body);
+    if (d['status'] == 'error') throw Exception(d['message'] ?? 'Twelve Data error');
+    return d;
+  }
+
+  Future<List<Candle>> _tdGetTimeSeries(String symbol, String interval, int outputsize) async {
+    final key = await _storage.getApiKey();
+    final url = '${AppConstants.twelveDataBaseUrl}/time_series'
+        '?symbol=$symbol&interval=$interval&outputsize=$outputsize&apikey=$key';
+    final r = await http.get(Uri.parse(url));
+    final d = json.decode(r.body);
+    if (d['status'] == 'error') throw Exception(d['message'] ?? 'Twelve Data error');
+    final values = d['values'] as List;
+    return values.map((v) => Candle.fromTwelveData(v)).toList().reversed.toList();
+  }
+
+  // ─── Alpha Vantage ─────────────────────────────────────────────────────────
+
+  /// Convert "XAU/USD" → from="XAU" to="USD" for Alpha Vantage FX/crypto endpoints
+  Map<String, String> _splitSymbol(String symbol) {
+    final parts = symbol.replaceAll(' ', '').split('/');
+    if (parts.length == 2) return {'from': parts[0], 'to': parts[1]};
+    return {'from': symbol, 'to': 'USD'};
+  }
+
+  Future<Map<String, dynamic>> _avGetPrice(String symbol) async {
+    final key = await _storage.getAlphaVantageKey();
+    final sp = _splitSymbol(symbol);
+
+    // Try FX first, fall back to CURRENCY_EXCHANGE_RATE for commodities
+    final url = '${AppConstants.alphaVantageBaseUrl}/query'
+        '?function=CURRENCY_EXCHANGE_RATE'
+        '&from_currency=${sp['from']}&to_currency=${sp['to']}'
+        '&apikey=$key';
+    final r = await http.get(Uri.parse(url));
+    final d = json.decode(r.body);
+    final rate = d['Realtime Currency Exchange Rate'];
+    if (rate == null) throw Exception('Alpha Vantage: no data for $symbol. Check API key.');
+    return {'price': rate['5. Exchange Rate']};
+  }
+
+  Future<Map<String, dynamic>> _avGetQuote(String symbol) async {
+    // Alpha Vantage doesn't have a single "quote" endpoint for FX
+    // We build a minimal quote from the exchange rate + daily OHLC
+    final priceData = await _avGetPrice(symbol);
+    final price = double.parse(priceData['price'].toString());
+    // Fetch daily series for OHLC
+    try {
+      final candles = await _avGetTimeSeries(symbol, '1day', 2);
+      if (candles.isNotEmpty) {
+        final today = candles.last;
+        return {
+          'open': today.open.toString(),
+          'high': today.high.toString(),
+          'low': today.low.toString(),
+          'close': today.close.toString(),
+          'change': (price - today.open).toString(),
+          'percent_change': ((price - today.open) / today.open * 100).toString(),
+        };
+      }
+    } catch (_) {}
+    return {
+      'open': price.toString(),
+      'high': price.toString(),
+      'low': price.toString(),
+      'close': price.toString(),
+      'change': '0',
+      'percent_change': '0',
+    };
+  }
+
+  Future<List<Candle>> _avGetTimeSeries(String symbol, String interval, int outputsize) async {
+    final key = await _storage.getAlphaVantageKey();
+    final sp = _splitSymbol(symbol);
+    final avInterval = AppConstants.avIntervalMap[interval] ?? '60min';
+
+    String url;
+    if (avInterval == 'daily') {
+      // FX_DAILY for forex/commodities
+      url = '${AppConstants.alphaVantageBaseUrl}/query'
+          '?function=FX_DAILY'
+          '&from_symbol=${sp['from']}&to_symbol=${sp['to']}'
+          '&outputsize=${outputsize > 100 ? "full" : "compact"}'
+          '&apikey=$key';
+    } else {
+      url = '${AppConstants.alphaVantageBaseUrl}/query'
+          '?function=FX_INTRADAY'
+          '&from_symbol=${sp['from']}&to_symbol=${sp['to']}'
+          '&interval=$avInterval'
+          '&outputsize=${outputsize > 100 ? "full" : "compact"}'
+          '&apikey=$key';
+    }
+
+    final r = await http.get(Uri.parse(url));
+    final d = json.decode(r.body);
+
+    if (d.containsKey('Error Message')) throw Exception('Alpha Vantage: ${d["Error Message"]}');
+    if (d.containsKey('Note')) throw Exception('Alpha Vantage rate limit reached. Try again in a minute.');
+    if (d.containsKey('Information')) throw Exception('Alpha Vantage: ${d["Information"]}');
+
+    // Find the time series key (varies by function)
+    final seriesKey = d.keys.firstWhere(
+      (k) => k.startsWith('Time Series') || k.startsWith('FX'),
+      orElse: () => '',
+    );
+    if (seriesKey.isEmpty) throw Exception('Alpha Vantage: unexpected response format');
+
+    final series = d[seriesKey] as Map<String, dynamic>;
+    final candles = series.entries.map((e) {
+      final v = e.value as Map<String, dynamic>;
+      return Candle(
+        time: DateTime.parse(e.key),
+        open: double.parse(v['1. open'].toString()),
+        high: double.parse(v['2. high'].toString()),
+        low: double.parse(v['3. low'].toString()),
+        close: double.parse(v['4. close'].toString()),
+        volume: 0,
+      );
+    }).toList();
+
+    // Sort chronologically (AV returns newest first)
+    candles.sort((a, b) => a.time.compareTo(b.time));
+    return candles.length > outputsize
+        ? candles.sublist(candles.length - outputsize)
+        : candles;
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -43,6 +44,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // Signal data
   TradingSignal? _signal;
 
+  // Auto-refresh timer
+  Timer? _refreshTimer;
+
   // AdMob banner
   BannerAd? _bannerAd;
   bool _bannerAdLoaded = false;
@@ -51,12 +55,14 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadSymbol();
+    _applyRefreshInterval();
     _loadBannerAd();
     _loadPremium();
   }
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _bannerAd?.dispose();
     super.dispose();
   }
@@ -116,6 +122,18 @@ class _HomeScreenState extends State<HomeScreen> {
         _isLoading = false;
       });
     }
+  }
+
+
+  void _startAutoRefresh(int intervalMinutes) {
+    _refreshTimer?.cancel();
+    if (intervalMinutes == 0) return;
+    _refreshTimer = Timer.periodic(Duration(minutes: intervalMinutes), (_) => _loadData());
+  }
+
+  Future<void> _applyRefreshInterval() async {
+    final interval = await _storage.getRefreshInterval();
+    _startAutoRefresh(interval);
   }
 
   void _onSymbolChanged(String symbol) {
@@ -180,6 +198,10 @@ class _HomeScreenState extends State<HomeScreen> {
           dailyHigh: _dailyHigh,
           dailyLow: _dailyLow,
           dailyOpen: _dailyOpen,
+          symbolDisplay: AppConstants.availableSymbols.firstWhere(
+            (i) => i.symbol == _activeSymbol,
+            orElse: () => AppConstants.availableSymbols.first,
+          ).display,
         ),
         const SizedBox(height: 16),
 

@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:gold_signal_ai/utils/theme.dart';
-import 'package:gold_signal_ai/utils/constants.dart';
+import '../utils/theme.dart';
+import '../utils/constants.dart';
 
-/// A card widget showing current XAUUSD price info.
-///
-/// Displays the current price in large gold text, the daily change (with green/red coloring),
-/// and a grid of daily high, daily low, daily open, and spread.
+/// Price card showing current price, daily OHLC, and change for any instrument.
 class PriceCard extends StatelessWidget {
   final double price;
   final double dailyChange;
@@ -15,6 +12,7 @@ class PriceCard extends StatelessWidget {
   final double dailyLow;
   final double dailyOpen;
   final double? spread;
+  final String? symbolDisplay; // Dynamic — shows active symbol
 
   const PriceCard({
     super.key,
@@ -25,25 +23,23 @@ class PriceCard extends StatelessWidget {
     required this.dailyLow,
     required this.dailyOpen,
     this.spread,
+    this.symbolDisplay,
   });
 
   @override
   Widget build(BuildContext context) {
-    final priceFormatter = NumberFormat('#,##0.00', 'en_US');
-    final percentFormatter = NumberFormat('+0.00%;-0.00%', 'en_US');
-    final changeFormatter = NumberFormat('+#,##0.00;-#,##0.00', 'en_US');
+    final priceFormatter = NumberFormat('#,##0.00####', 'en_US');
+    final changeFormatter = NumberFormat('+#,##0.00####;-#,##0.00####', 'en_US');
 
     final isPositive = dailyChange >= 0;
     final changeColor = isPositive ? AppTheme.green : AppTheme.red;
     final changeIcon = isPositive ? Icons.trending_up : Icons.trending_down;
 
-    // Formatting dailyChangePercent (passed as double e.g. 0.35 for 0.35%, or maybe 0.0035.
-    // Usually, in API/signal systems dailyChangePercent is passed directly as percentage, e.g. 0.45 for 0.45%.
-    // Let's divide by 100 if we use percentFormatter, or just format directly as string with '%' to be safe.
-    // Let's format dailyChangePercent directly:
     final String changeSign = isPositive ? '+' : '';
     final String changePercentText = '$changeSign${dailyChangePercent.toStringAsFixed(2)}%';
     final String changeValText = changeFormatter.format(dailyChange);
+
+    final displayLabel = symbolDisplay ?? AppConstants.defaultSymbolDisplay;
 
     return Card(
       elevation: 4,
@@ -58,7 +54,7 @@ class PriceCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Symbol and Title Row
+            // Symbol row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -70,12 +66,12 @@ class PriceCard extends StatelessWidget {
                         color: AppTheme.goldDark.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.monetization_on, color: AppTheme.gold, size: 20),
+                      child: const Icon(Icons.show_chart, color: AppTheme.gold, size: 20),
                     ),
                     const SizedBox(width: 8),
-                    const Text(
-                      AppConstants.defaultSymbolDisplay,
-                      style: TextStyle(
+                    Text(
+                      displayLabel,
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.5,
@@ -104,7 +100,7 @@ class PriceCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            // Large Price and Daily Change Row
+            // Price + change
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -114,7 +110,7 @@ class PriceCard extends StatelessWidget {
                   '\$${priceFormatter.format(price)}',
                   style: const TextStyle(
                     color: AppTheme.gold,
-                    fontSize: 32,
+                    fontSize: 30,
                     fontWeight: FontWeight.bold,
                     letterSpacing: -0.5,
                   ),
@@ -128,7 +124,7 @@ class PriceCard extends StatelessWidget {
                       '$changeValText ($changePercentText)',
                       style: TextStyle(
                         color: changeColor,
-                        fontSize: 14,
+                        fontSize: 13,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -140,7 +136,7 @@ class PriceCard extends StatelessWidget {
             const Divider(color: Colors.white10),
             const SizedBox(height: 16),
 
-            // Grid of High, Low, Open, Spread
+            // OHLC grid
             Row(
               children: [
                 Expanded(
@@ -151,11 +147,7 @@ class PriceCard extends StatelessWidget {
                     iconColor: AppTheme.green,
                   ),
                 ),
-                Container(
-                  height: 40,
-                  width: 1,
-                  color: Colors.white10,
-                ),
+                Container(height: 40, width: 1, color: Colors.white10),
                 Expanded(
                   child: _buildGridItem(
                     label: 'DAILY LOW',
@@ -177,15 +169,11 @@ class PriceCard extends StatelessWidget {
                     iconColor: Colors.grey,
                   ),
                 ),
-                Container(
-                  height: 40,
-                  width: 1,
-                  color: Colors.white10,
-                ),
+                Container(height: 40, width: 1, color: Colors.white10),
                 Expanded(
                   child: _buildGridItem(
                     label: 'SPREAD',
-                    value: spread != null ? '${spread!.toStringAsFixed(2)} pips' : 'N/A',
+                    value: spread != null ? '${spread!.toStringAsFixed(4)}' : 'N/A',
                     icon: Icons.unfold_more,
                     iconColor: AppTheme.gold,
                   ),
@@ -198,7 +186,6 @@ class PriceCard extends StatelessWidget {
     );
   }
 
-  /// Builds an individual item for the metrics grid inside the price card.
   Widget _buildGridItem({
     required String label,
     required String value,
@@ -230,7 +217,7 @@ class PriceCard extends StatelessWidget {
             value,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
           ),

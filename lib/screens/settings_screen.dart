@@ -5,13 +5,7 @@ import '../services/storage_service.dart';
 import '../utils/constants.dart';
 import '../utils/theme.dart';
 
-/// Settings screen — manage API key, premium status, and app info.
-///
-/// Users can:
-/// - Enter their own Twelve Data API key (stored locally on device)
-/// - View/clear the default API key
-/// - Toggle premium status (removes ads — demo only)
-/// - View app info and disclaimer
+/// Settings screen — API keys, provider selection, refresh interval, premium.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -22,12 +16,17 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final StorageService _storage = StorageService();
   final ApiService _api = ApiService();
-  final _apiKeyController = TextEditingController();
+  final _tdKeyController = TextEditingController();
+  final _avKeyController = TextEditingController();
 
   bool _isPremium = false;
   bool _isValidating = false;
-  bool? _apiKeyValid;
-  String _currentApiKey = '';
+  bool? _tdKeyValid;
+  bool? _avKeyValid;
+  String _currentTdKey = '';
+  String _currentAvKey = '';
+  String _apiProvider = AppConstants.apiProviderTwelveData;
+  int _refreshInterval = AppConstants.defaultRefreshInterval;
 
   @override
   void initState() {
@@ -36,66 +35,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadSettings() async {
-    _currentApiKey = await _storage.getApiKey();
+    _currentTdKey = await _storage.getApiKey();
+    _currentAvKey = await _storage.getAlphaVantageKey();
     _isPremium = await _storage.isPremium();
+    _apiProvider = await _storage.getApiProvider();
+    _refreshInterval = await _storage.getRefreshInterval();
 
-    // Show masked version of current key
-    if (_currentApiKey.isNotEmpty) {
-      _apiKeyController.text = _currentApiKey;
-    }
-
+    _tdKeyController.text = _currentTdKey == AppConstants.twelveDataDefaultKey ? '' : _currentTdKey;
+    _avKeyController.text = _currentAvKey == AppConstants.alphaVantageDefaultKey ? '' : _currentAvKey;
     setState(() {});
   }
 
-  Future<void> _saveApiKey() async {
-    final key = _apiKeyController.text.trim();
+  Future<void> _saveTdKey() async {
+    final key = _tdKeyController.text.trim();
     if (key.isEmpty) return;
-
     setState(() => _isValidating = true);
-
-    // Validate the API key
     final isValid = await _api.validateApiKey(key);
-
     if (isValid) {
       await _storage.setApiKey(key);
-      setState(() {
-        _currentApiKey = key;
-        _apiKeyValid = true;
-        _isValidating = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('API key saved and validated!'),
-          backgroundColor: AppTheme.green,
-        ),
-      );
+      setState(() { _currentTdKey = key; _tdKeyValid = true; _isValidating = false; });
+      _snack('Twelve Data key saved!', AppTheme.green);
     } else {
-      setState(() {
-        _apiKeyValid = false;
-        _isValidating = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid API key. Please check and try again.'),
-          backgroundColor: AppTheme.red,
-        ),
-      );
+      setState(() { _tdKeyValid = false; _isValidating = false; });
+      _snack('Invalid Twelve Data key.', AppTheme.red);
     }
   }
 
-  Future<void> _clearApiKey() async {
-    await _storage.clearApiKey();
-    _apiKeyController.clear();
-    setState(() {
-      _currentApiKey = '';
-      _apiKeyValid = null;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Using default API key'),
-        backgroundColor: AppTheme.gold,
-      ),
-    );
+  Future<void> _saveAvKey() async {
+    final key = _avKeyController.text.trim();
+    if (key.isEmpty) return;
+    setState(() => _isValidating = true);
+    final isValid = await _api.validateApiKey(key, isAlphaVantage: true);
+    if (isValid) {
+      await _storage.setAlphaVantageKey(key);
+      setState(() { _currentAvKey = key; _avKeyValid = true; _isValidating = false; });
+      _snack('Alpha Vantage key saved!', AppTheme.green);
+    } else {
+      setState(() { _avKeyValid = false; _isValidating = false; });
+      _snack('Invalid Alpha Vantage key.', AppTheme.red);
+    }
+  }
+
+  Future<void> _setProvider(String provider) async {
+    await _storage.setApiProvider(provider);
+    setState(() => _apiProvider = provider);
+    _snack('Data provider set to ${provider == AppConstants.apiProviderTwelveData ? "Twelve Data" : "Alpha Vantage"}', AppTheme.gold);
+  }
+
+  Future<void> _setRefreshInterval(int minutes) async {
+    await _storage.setRefreshInterval(minutes);
+    setState(() => _refreshInterval = minutes);
+    final label = AppConstants.refreshIntervalLabels[AppConstants.refreshIntervals.indexOf(minutes)];
+    _snack('Auto-refresh: $label', AppTheme.gold);
   }
 
   Future<void> _togglePremium(bool value) async {
@@ -103,9 +94,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _isPremium = value);
   }
 
+  void _snack(String msg, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: color),
+    );
+  }
+
   @override
   void dispose() {
-    _apiKeyController.dispose();
+    _tdKeyController.dispose();
+    _avKeyController.dispose();
     super.dispose();
   }
 
@@ -117,8 +116,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // === API Key Section ===
-          _buildSectionHeader('MARKET DATA'),
+
+          // ── Data Provider ──────────────────────────────────────────────────
+          _sectionHeader('DATA PROVIDER'),
           const SizedBox(height: 8),
           Card(
             color: AppTheme.surface,
@@ -129,95 +129,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.vpn_key, color: AppTheme.gold, size: 20),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Twelve Data API Key',
-                        style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Enter your own API key for higher limits.\nFree key at twelvedata.com/pricing',
-                    style: TextStyle(color: Colors.white38, fontSize: 12),
-                  ),
+                  const Text('Select API provider for market data:',
+                      style: TextStyle(color: Colors.white54, fontSize: 12)),
                   const SizedBox(height: 12),
-                  TextField(
-                    controller: _apiKeyController,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: 'Enter your API key',
-                      hintStyle: const TextStyle(color: Colors.white24),
-                      filled: true,
-                      fillColor: AppTheme.blackLight,
-                      suffixIcon: _apiKeyValid == true
-                          ? const Icon(Icons.check_circle, color: AppTheme.green)
-                          : _apiKeyValid == false
-                              ? const Icon(Icons.cancel, color: AppTheme.red)
-                              : null,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: AppTheme.goldDark.withOpacity(0.3)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: AppTheme.gold),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isValidating ? null : _saveApiKey,
-                          icon: _isValidating
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.black),
-                                )
-                              : const Icon(Icons.save, size: 18),
-                          label: Text(_isValidating ? 'Validating...' : 'Save & Validate'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.gold,
-                            foregroundColor: AppTheme.black,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton(
-                        onPressed: _clearApiKey,
-                        child: const Text('Use Default', style: TextStyle(color: Colors.white54)),
-                      ),
-                    ],
+                  _providerTile(
+                    title: 'Twelve Data',
+                    subtitle: 'Forex, commodities, crypto, stocks\nFree: 800 req/day',
+                    value: AppConstants.apiProviderTwelveData,
+                    icon: Icons.data_usage,
                   ),
                   const SizedBox(height: 8),
-                  // Status badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: (_currentApiKey.isNotEmpty && _currentApiKey != AppConstants.defaultApiKey)
-                          ? AppTheme.green.withOpacity(0.1)
-                          : AppTheme.goldDark.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      (_currentApiKey.isNotEmpty && _currentApiKey != AppConstants.defaultApiKey)
-                          ? 'Using custom API key'
-                          : 'Using default (shared) API key — limited requests',
-                      style: TextStyle(
-                        color: (_currentApiKey.isNotEmpty && _currentApiKey != AppConstants.defaultApiKey)
-                            ? AppTheme.green
-                            : AppTheme.gold,
-                        fontSize: 11,
-                      ),
-                    ),
+                  _providerTile(
+                    title: 'Alpha Vantage',
+                    subtitle: 'Forex, crypto, stocks\nFree: 25 req/day',
+                    value: AppConstants.apiProviderAlphaVantage,
+                    icon: Icons.bar_chart,
                   ),
                 ],
               ),
@@ -225,8 +153,113 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 24),
 
-          // === Premium Section ===
-          _buildSectionHeader('SUBSCRIPTION'),
+          // ── Twelve Data API Key ────────────────────────────────────────────
+          _sectionHeader('TWELVE DATA API KEY'),
+          const SizedBox(height: 8),
+          _apiKeyCard(
+            controller: _tdKeyController,
+            hint: 'Paste your Twelve Data key',
+            isValid: _tdKeyValid,
+            isValidating: _isValidating,
+            onSave: _saveTdKey,
+            onClear: () async {
+              await _storage.clearApiKey();
+              _tdKeyController.clear();
+              setState(() { _currentTdKey = AppConstants.twelveDataDefaultKey; _tdKeyValid = null; });
+              _snack('Using default Twelve Data key', AppTheme.gold);
+            },
+            usingDefault: _currentTdKey == AppConstants.twelveDataDefaultKey,
+            getKeyUrl: 'twelvedata.com/pricing',
+          ),
+          const SizedBox(height: 24),
+
+          // ── Alpha Vantage API Key ──────────────────────────────────────────
+          _sectionHeader('ALPHA VANTAGE API KEY'),
+          const SizedBox(height: 8),
+          _apiKeyCard(
+            controller: _avKeyController,
+            hint: 'Paste your Alpha Vantage key',
+            isValid: _avKeyValid,
+            isValidating: _isValidating,
+            onSave: _saveAvKey,
+            onClear: () async {
+              await _storage.setAlphaVantageKey(AppConstants.alphaVantageDefaultKey);
+              _avKeyController.clear();
+              setState(() { _currentAvKey = AppConstants.alphaVantageDefaultKey; _avKeyValid = null; });
+              _snack('Using demo key (very limited)', AppTheme.gold);
+            },
+            usingDefault: _currentAvKey == AppConstants.alphaVantageDefaultKey,
+            getKeyUrl: 'alphavantage.co/support/#api-key',
+          ),
+          const SizedBox(height: 24),
+
+          // ── Auto Refresh ───────────────────────────────────────────────────
+          _sectionHeader('AUTO REFRESH'),
+          const SizedBox(height: 8),
+          Card(
+            color: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: AppTheme.goldDark.withOpacity(0.3)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('How often to pull new data automatically:',
+                      style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List.generate(AppConstants.refreshIntervals.length, (i) {
+                      final val = AppConstants.refreshIntervals[i];
+                      final label = AppConstants.refreshIntervalLabels[i];
+                      final selected = val == _refreshInterval;
+                      return GestureDetector(
+                        onTap: () => _setRefreshInterval(val),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: selected ? AppTheme.gold : AppTheme.blackLight,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: selected ? AppTheme.gold : AppTheme.goldDark.withOpacity(0.3)),
+                          ),
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              color: selected ? AppTheme.black : Colors.white70,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                  if (_refreshInterval > 0) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.info_outline, color: Colors.white38, size: 14),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Data refreshes every $_refreshInterval minute${_refreshInterval > 1 ? "s" : ""}',
+                          style: const TextStyle(color: Colors.white38, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // ── Premium ────────────────────────────────────────────────────────
+          _sectionHeader('SUBSCRIPTION'),
           const SizedBox(height: 8),
           Card(
             color: AppTheme.surface,
@@ -248,44 +281,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChanged: _togglePremium,
             ),
           ),
-          const SizedBox(height: 8),
-          if (_isPremium)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppTheme.gold.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.check_circle, color: AppTheme.gold, size: 16),
-                  SizedBox(width: 8),
-                  Text('Premium active — ads removed', style: TextStyle(color: AppTheme.gold, fontSize: 12)),
-                ],
-              ),
-            ),
           const SizedBox(height: 24),
 
-          // === About Section ===
-          _buildSectionHeader('ABOUT'),
+          // ── About ──────────────────────────────────────────────────────────
+          _sectionHeader('ABOUT'),
           const SizedBox(height: 8),
           Card(
             color: AppTheme.surface,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Column(
               children: [
-                _buildAboutTile('App Name', AppConstants.appName),
-                _buildAboutTile('Version', AppConstants.appVersion),
-                _buildAboutTile('Symbol', AppConstants.defaultSymbolDisplay),
-                _buildAboutTile('Data Provider', 'Twelve Data'),
-                _buildAboutTile('Framework', 'Flutter'),
+                _aboutTile('App Name', AppConstants.appName),
+                _aboutTile('Version', AppConstants.appVersion),
+                _aboutTile('Provider', _apiProvider == AppConstants.apiProviderTwelveData ? 'Twelve Data' : 'Alpha Vantage'),
+                _aboutTile('Framework', 'Flutter'),
               ],
             ),
           ),
           const SizedBox(height: 24),
 
-          // === Disclaimer ===
-          _buildSectionHeader('DISCLAIMER'),
+          // ── Disclaimer ─────────────────────────────────────────────────────
+          _sectionHeader('DISCLAIMER'),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(16),
@@ -298,11 +314,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 const Icon(Icons.warning_amber_rounded, color: AppTheme.red, size: 24),
                 const SizedBox(height: 8),
-                Text(
-                  appDisclaimer,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12, height: 1.5),
-                  textAlign: TextAlign.center,
-                ),
+                Text(appDisclaimer,
+                    style: const TextStyle(color: Colors.white54, fontSize: 12, height: 1.5),
+                    textAlign: TextAlign.center),
               ],
             ),
           ),
@@ -312,19 +326,119 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        color: Colors.white38,
-        fontSize: 12,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 1.5,
+  Widget _providerTile({required String title, required String subtitle, required String value, required IconData icon}) {
+    final selected = _apiProvider == value;
+    return GestureDetector(
+      onTap: () => _setProvider(value),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.gold.withOpacity(0.1) : AppTheme.blackLight,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: selected ? AppTheme.gold : Colors.white10),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: selected ? AppTheme.gold : Colors.white38, size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(color: selected ? AppTheme.gold : Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                  Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                ],
+              ),
+            ),
+            if (selected) const Icon(Icons.check_circle, color: AppTheme.gold, size: 20),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildAboutTile(String label, String value) {
+  Widget _apiKeyCard({
+    required TextEditingController controller,
+    required String hint,
+    required bool? isValid,
+    required bool isValidating,
+    required VoidCallback onSave,
+    required VoidCallback onClear,
+    required bool usingDefault,
+    required String getKeyUrl,
+  }) {
+    return Card(
+      color: AppTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppTheme.goldDark.withOpacity(0.3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Get a free key at $getKeyUrl', style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: hint,
+                hintStyle: const TextStyle(color: Colors.white24),
+                filled: true,
+                fillColor: AppTheme.blackLight,
+                suffixIcon: isValid == true
+                    ? const Icon(Icons.check_circle, color: AppTheme.green)
+                    : isValid == false
+                        ? const Icon(Icons.cancel, color: AppTheme.red)
+                        : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: AppTheme.goldDark.withOpacity(0.3)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppTheme.gold),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: isValidating ? null : onSave,
+                    icon: isValidating
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.black))
+                        : const Icon(Icons.save, size: 16),
+                    label: Text(isValidating ? 'Validating...' : 'Save & Validate'),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.gold, foregroundColor: AppTheme.black),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: onClear,
+                  child: const Text('Reset', style: TextStyle(color: Colors.white54)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              usingDefault ? 'Using default key (limited)' : 'Using custom key',
+              style: TextStyle(color: usingDefault ? AppTheme.gold : AppTheme.green, fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionHeader(String title) {
+    return Text(title, style: const TextStyle(color: Colors.white38, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.5));
+  }
+
+  Widget _aboutTile(String label, String value) {
     return ListTile(
       dense: true,
       title: Text(label, style: const TextStyle(color: Colors.white54, fontSize: 14)),
