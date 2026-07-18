@@ -1,0 +1,56 @@
+name: gold_signal_ai
+description: "Gold Signal AI — Educational XAUUSD (Gold/USD) technical analysis indicator"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Material Design 3 icons
+  cupertino_icons: ^1.0.6
+
+  # HTTP for API calls (Twelve Data)
+  http: ^1.2.0
+
+  # Local storage for API key and settings
+  shared_preferences: ^2.2.2
+
+  # Firebase (placeholder — configure with your own firebase project)
+  firebase_core: ^2.27.0
+
+  # Google AdMob
+  google_mobile_ads: ^4.0.0
+
+  # Local notifications for price alerts
+  flutter_local_notifications: ^17.0.0
+
+  # State management
+  provider: ^6.1.2
+
+  # Charts — custom candlestick chart built on fl_chart
+  fl_chart: ^0.67.0
+
+  # Number formatting
+  intl: ^0.19.0
+
+  # Background execution for price alerts
+  workmanager: ^0.5.2
+
+  # URL launcher for disclaimer links
+  url_launcher: ^6.2.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Assets
+  assets:
+    - assets/

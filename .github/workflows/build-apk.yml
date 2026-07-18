@@ -1,0 +1,94 @@
+# .github/workflows/build-apk.yml
+# Gold Signal AI — Automatic Flutter APK build
+# Triggers on push to main, pull requests, and manual dispatch
+# Uploads the APK as a GitHub Actions artifact + creates a release on tags
+
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allow manual trigger from GitHub UI
+
+jobs:
+  build:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # ─── 1. Checkout source code ───
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ─── 2. Set up Java 17 ───
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ─── 3. Set up Flutter ───
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.3'
+          channel: 'stable'
+          cache: true
+
+      # ─── 4. Verify Flutter ───
+      - name: Verify Flutter installation
+        run: flutter doctor -v
+
+      # ─── 5. Install dependencies ───
+      - name: Install dependencies
+        run: flutter pub get
+
+      # ─── 6. Analyze code (warnings don't fail build) ───
+      - name: Analyze code
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
+
+      # ─── 7. Build debug APK ───
+      # Using debug build so no signing keystore is required.
+      # For release builds, add signing config in android/app/build.gradle
+      - name: Build APK
+        run: flutter build apk --debug --target-platform android-arm,android-arm64,android-x64
+
+      # ─── 8. Upload APK as artifact ───
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-signal-ai-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 30
+
+      # ─── 9. Create a GitHub release on version tags ───
+      - name: Create Release with APK
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/app/outputs/flutter-apk/app-debug.apk
+          name: Gold Signal AI ${{ github.ref_name }}
+          body: |
+            ## Gold Signal AI — ${{ github.ref_name }}
+
+            ### Installation
+            1. Download the APK file below
+            2. Enable "Install from unknown sources" on your Android device
+            3. Open the APK file and install
+            4. The app requires Android 6.0+ (API 23)
+
+            ### Features
+            - Real-time XAUUSD price and chart
+            - Technical indicators (EMA, RSI, MACD, Bollinger Bands, ATR, S&R)
+            - BUY/SELL/WAIT signal engine
+            - Price alerts
+            - Dark gold/black Material Design 3 theme
+
+            ### Disclaimer
+            This application is for educational and informational purposes only.
+            It does not provide financial advice or guarantee trading results.
+          draft: false
+          prerelease: false

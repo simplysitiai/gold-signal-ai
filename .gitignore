@@ -1,0 +1,40 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+build/
+.cupertino_icons
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code
+.vscode/
+
+# Android
+android/.gradle/
+android/local.properties
+android/captures/
+android/key.properties
+**/google-services.json
+*.keystore
+*.jks
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Runner/GeneratedPluginRegistrant.*
+
+# Firebase
+lib/firebase_options.dart
+
+# OS
+.DS_Store
+Thumbs.db
