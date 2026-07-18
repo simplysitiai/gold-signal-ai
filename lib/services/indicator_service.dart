@@ -212,9 +212,9 @@ class IndicatorService {
 
     // MACD
     final macdResult = calculateMACD(closes);
-    final macdLine = macdResult.macdLine.isNotEmpty ? macdResult.macdLine.last : 0;
-    final macdSignal = macdResult.signalLine.isNotEmpty ? macdResult.signalLine.last : 0;
-    final macdHistogram = macdResult.histogram.isNotEmpty ? macdResult.histogram.last : 0;
+    final macdLine = macdResult.macdLine.isNotEmpty ? macdResult.macdLine.last : 0.0;
+    final macdSignal = macdResult.signalLine.isNotEmpty ? macdResult.signalLine.last : 0.0;
+    final macdHistogram = macdResult.histogram.isNotEmpty ? macdResult.histogram.last : 0.0;
 
     // Bollinger Bands
     final bbResult = calculateBollingerBands(closes);

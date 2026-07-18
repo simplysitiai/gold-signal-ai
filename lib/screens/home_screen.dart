@@ -4,6 +4,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../models/candle.dart';
 import '../models/signal.dart';
 import '../services/api_service.dart';
+import '../services/storage_service.dart';
 import '../services/signal_engine.dart';
 import '../utils/constants.dart';
 import '../utils/theme.dart';
@@ -23,6 +24,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ApiService _api = ApiService();
+  final StorageService _storage = StorageService();
 
   bool _isLoading = true;
   bool _isPremium = false;
@@ -48,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadData();
     _loadBannerAd();
+    _loadPremium();
   }
 
   @override
@@ -71,6 +74,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     _bannerAd!.load();
+  }
+
+  /// Load premium status from storage
+  Future<void> _loadPremium() async {
+    final premium = await _storage.isPremium();
+    setState(() => _isPremium = premium);
   }
 
   /// Fetch quote data and generate a signal from recent candlesticks

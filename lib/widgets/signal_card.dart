@@ -79,7 +79,7 @@ class SignalCard extends StatelessWidget {
                           style: TextStyle(
                             color: signalColor,
                             fontSize: 32,
-                            fontWeight: FontWeight.black,
+                            fontWeight: FontWeight.w900,
                             letterSpacing: 1.0,
                           ),
                         ),
@@ -271,7 +271,7 @@ class SignalCard extends StatelessWidget {
             child: Text(
               reason,
               style: const TextStyle(
-                color: Colors.white87,
+                color: Color(0xDDFFFFFF),
                 fontSize: 13,
                 height: 1.35,
               ),

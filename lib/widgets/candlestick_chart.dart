@@ -179,8 +179,7 @@ class CandlestickChart extends StatelessWidget {
                   enabled: true,
                   handleBuiltInTouches: true,
                   touchTooltipData: LineTouchTooltipData(
-                    tooltipBgColor: Colors.black.withOpacity(0.9),
-                    tooltipBorder: const BorderSide(color: AppTheme.gold, width: 1),
+                    // Tooltip styling uses defaults in fl_chart 0.67+
                     getTooltipItems: (List<LineBarSpot> touchedSpots) {
                       if (touchedSpots.isEmpty) return [];
 

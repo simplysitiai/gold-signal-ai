@@ -29,7 +29,7 @@ class IndicatorCard extends StatelessWidget {
 
     return Card(
       elevation: 2,
-      shadowColor: Colors.black32,
+      shadowColor: Colors.black.withOpacity(0.32),
       color: AppTheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),

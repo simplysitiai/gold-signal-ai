@@ -69,4 +69,21 @@ class StorageService {
       await saveAlerts(alerts);
     }
   }
+
+  /// Mark an alert as triggered (when price reaches target)
+  Future<void> markAlertTriggered(String id) async {
+    final alerts = await getAlerts();
+    final idx = alerts.indexWhere((a) => a.id == id);
+    if (idx >= 0) {
+      alerts[idx] = PriceAlert(
+        id: alerts[idx].id,
+        targetPrice: alerts[idx].targetPrice,
+        isAbove: alerts[idx].isAbove,
+        isActive: false,
+        createdAt: alerts[idx].createdAt,
+        triggered: true,
+      );
+      await saveAlerts(alerts);
+    }
+  }
 }
