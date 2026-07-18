@@ -11,7 +11,7 @@ on:
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,18 +19,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ─── 1. Checkout source code ───
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ─── 2. Set up Java 17 ───
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # ─── 3. Set up Flutter ───
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -38,25 +35,24 @@ jobs:
           channel: 'stable'
           cache: true
 
-      # ─── 4. Verify Flutter ───
       - name: Verify Flutter installation
         run: flutter doctor -v
 
-      # ─── 5. Install dependencies ───
+      # ─── Regenerate Android project files that Flutter expects ───
+      # Running `flutter create` patches the Android Gradle structure
+      # without overwriting existing Dart source code.
+      - name: Generate Android platform files
+        run: flutter create --platforms=android --org com.goldsignal --project-name gold_signal_ai .
+
       - name: Install dependencies
         run: flutter pub get
 
-      # ─── 6. Analyze code (warnings don't fail build) ───
       - name: Analyze code
         run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
 
-      # ─── 7. Build debug APK ───
-      # Using debug build so no signing keystore is required.
-      # For release builds, add signing config in android/app/build.gradle
       - name: Build APK
         run: flutter build apk --debug --target-platform android-arm,android-arm64,android-x64
 
-      # ─── 8. Upload APK as artifact ───
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -64,7 +60,6 @@ jobs:
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 30
 
-      # ─── 9. Create a GitHub release on version tags ───
       - name: Create Release with APK
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
