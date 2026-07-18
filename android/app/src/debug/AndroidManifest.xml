@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The INTERNET permission is needed for debug mode to communicate with Flutter -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+</manifest>

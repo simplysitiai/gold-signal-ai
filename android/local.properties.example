@@ -1,0 +1,4 @@
+# Copy this file to local.properties and set your Flutter SDK path
+sdk.dir=/path/to/Android/sdk
+flutter.sdk=/path/to/flutter/sdk
+flutter.buildMode=debug
