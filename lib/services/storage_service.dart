@@ -3,7 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/signal.dart';
 import '../utils/constants.dart';
 
-/// Local storage service for persisting API key, alerts, and settings.
+/// Local storage service for persisting API key, alerts, selected symbol,
+/// and settings.
 ///
 /// Implemented as a singleton so SharedPreferences is initialised once in
 /// main() and the same instance is reused everywhere — avoiding the
@@ -44,6 +45,18 @@ class StorageService {
   Future<void> clearApiKey() async {
     final p = await _p;
     await p.remove(AppConstants.keyApiKey);
+  }
+
+  // ===== Selected Symbol =====
+
+  Future<String> getSelectedSymbol() async {
+    final p = await _p;
+    return p.getString(AppConstants.keySelectedSymbol) ?? AppConstants.defaultSymbol;
+  }
+
+  Future<void> setSelectedSymbol(String symbol) async {
+    final p = await _p;
+    await p.setString(AppConstants.keySelectedSymbol, symbol);
   }
 
   // ===== Premium Status =====

@@ -4,7 +4,11 @@ import '../models/candle.dart';
 import '../utils/constants.dart';
 import 'storage_service.dart';
 
-/// Twelve Data API service for fetching XAU/USD market data
+/// Twelve Data API service for fetching market data.
+///
+/// All methods accept an optional [symbol] parameter (default: XAU/USD).
+/// This lets the app fetch data for any supported instrument — forex,
+/// commodities, crypto, or stocks.
 class ApiService {
   final StorageService _storage = StorageService();
 
@@ -14,11 +18,18 @@ class ApiService {
     return key.isNotEmpty ? key : AppConstants.defaultApiKey;
   }
 
-  /// Get current real-time price for XAU/USD
-  Future<Map<String, dynamic>> getRealTimePrice() async {
+  /// Get the currently selected symbol from storage (or default XAU/USD)
+  Future<String> _getSymbol({String? symbol}) async {
+    if (symbol != null) return symbol;
+    return await _storage.getSelectedSymbol();
+  }
+
+  /// Get current real-time price
+  Future<Map<String, dynamic>> getRealTimePrice({String? symbol}) async {
     final apiKey = await _getApiKey();
+    final sym = await _getSymbol(symbol: symbol);
     final url = '${AppConstants.baseUrl}${AppConstants.priceEndpoint}'
-        '?symbol=${AppConstants.symbol}&apikey=$apiKey';
+        '?symbol=$sym&apikey=$apiKey';
 
     final response = await http.get(Uri.parse(url));
     final data = json.decode(response.body);
@@ -31,10 +42,11 @@ class ApiService {
   }
 
   /// Get quote data (includes open, high, low, close, change, etc.)
-  Future<Map<String, dynamic>> getQuote() async {
+  Future<Map<String, dynamic>> getQuote({String? symbol}) async {
     final apiKey = await _getApiKey();
+    final sym = await _getSymbol(symbol: symbol);
     final url = '${AppConstants.baseUrl}${AppConstants.quoteEndpoint}'
-        '?symbol=${AppConstants.symbol}&apikey=$apiKey';
+        '?symbol=$sym&apikey=$apiKey';
 
     final response = await http.get(Uri.parse(url));
     final data = json.decode(response.body);
@@ -50,10 +62,12 @@ class ApiService {
   Future<List<Candle>> getTimeSeries({
     String interval = '1h',
     int outputsize = 200,
+    String? symbol,
   }) async {
     final apiKey = await _getApiKey();
+    final sym = await _getSymbol(symbol: symbol);
     final url = '${AppConstants.baseUrl}${AppConstants.timeSeriesEndpoint}'
-        '?symbol=${AppConstants.symbol}'
+        '?symbol=$sym'
         '&interval=$interval'
         '&outputsize=$outputsize'
         '&apikey=$apiKey';
@@ -71,11 +85,12 @@ class ApiService {
     return candles.reversed.toList();
   }
 
-  /// Get technical indicator values directly from Twelve Data API
-  Future<double> getEMA(int period, {String interval = '1h'}) async {
+  /// Get EMA value from Twelve Data API
+  Future<double> getEMA(int period, {String interval = '1h', String? symbol}) async {
     final apiKey = await _getApiKey();
+    final sym = await _getSymbol(symbol: symbol);
     final url = '${AppConstants.baseUrl}/ema'
-        '?symbol=${AppConstants.symbol}'
+        '?symbol=$sym'
         '&interval=$interval'
         '&time_period=$period'
         '&apikey=$apiKey';
@@ -92,10 +107,11 @@ class ApiService {
   }
 
   /// Get RSI value from Twelve Data API
-  Future<double> getRSI({String interval = '1h', int period = 14}) async {
+  Future<double> getRSI({String interval = '1h', int period = 14, String? symbol}) async {
     final apiKey = await _getApiKey();
+    final sym = await _getSymbol(symbol: symbol);
     final url = '${AppConstants.baseUrl}/rsi'
-        '?symbol=${AppConstants.symbol}'
+        '?symbol=$sym'
         '&interval=$interval'
         '&time_period=$period'
         '&apikey=$apiKey';
@@ -115,7 +131,7 @@ class ApiService {
   Future<bool> validateApiKey(String apiKey) async {
     try {
       final url = '${AppConstants.baseUrl}${AppConstants.priceEndpoint}'
-          '?symbol=${AppConstants.symbol}&apikey=$apiKey';
+          '?symbol=XAU/USD&apikey=$apiKey';
       final response = await http.get(Uri.parse(url));
       final data = json.decode(response.body);
       return data['status'] != 'error';

@@ -3,15 +3,17 @@ import 'package:flutter/material.dart';
 import '../models/candle.dart';
 import '../services/api_service.dart';
 import '../services/indicator_service.dart';
+import '../services/storage_service.dart';
 import '../utils/constants.dart';
 import '../utils/theme.dart';
 import '../widgets/candlestick_chart.dart';
+import '../widgets/symbol_selector.dart';
 
 /// Chart screen — displays a candlestick chart with selectable timeframes.
 ///
-/// Users can switch between 1m, 5m, 15m, 30m, 1H, 4H, and 1D intervals.
-/// EMA 20 and EMA 50 overlay lines are drawn on the chart.
-/// Also shows a compact indicator summary below the chart.
+/// Users can switch between any supported instrument and between 1m, 5m,
+/// 15m, 30m, 1H, 4H, and 1D intervals. EMA 20 and EMA 50 overlay lines are
+/// drawn on the chart. Also shows a compact indicator summary below.
 class ChartScreen extends StatefulWidget {
   const ChartScreen({super.key});
 
@@ -21,8 +23,10 @@ class ChartScreen extends StatefulWidget {
 
 class _ChartScreenState extends State<ChartScreen> {
   final ApiService _api = ApiService();
+  final StorageService _storage = StorageService();
 
   int _selectedIntervalIndex = 4; // Default to 1H
+  String _activeSymbol = AppConstants.defaultSymbol;
   List<Candle> _candles = [];
   List<double> _ema20Values = [];
   List<double> _ema50Values = [];
@@ -32,6 +36,17 @@ class _ChartScreenState extends State<ChartScreen> {
   @override
   void initState() {
     super.initState();
+    _loadSymbol();
+  }
+
+  Future<void> _loadSymbol() async {
+    final sym = await _storage.getSelectedSymbol();
+    setState(() => _activeSymbol = sym);
+    _loadChartData();
+  }
+
+  void _onSymbolChanged(String symbol) {
+    setState(() => _activeSymbol = symbol);
     _loadChartData();
   }
 
@@ -43,7 +58,11 @@ class _ChartScreenState extends State<ChartScreen> {
 
     try {
       final interval = AppConstants.intervals[_selectedIntervalIndex];
-      final candles = await _api.getTimeSeries(interval: interval, outputsize: 150);
+      final candles = await _api.getTimeSeries(
+        interval: interval,
+        outputsize: 150,
+        symbol: _activeSymbol,
+      );
 
       // Calculate EMA overlays
       final closes = candles.map((c) => c.close).toList();
@@ -51,7 +70,6 @@ class _ChartScreenState extends State<ChartScreen> {
       final ema50 = IndicatorService.calculateEMA(closes, AppConstants.emaLongPeriod);
 
       // Align EMA values to candle indices
-      // EMA list is shorter than candle list; offset them to align with the end
       List<double> alignedEma20 = [];
       List<double> alignedEma50 = [];
 
@@ -88,11 +106,17 @@ class _ChartScreenState extends State<ChartScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final displaySymbol = AppConstants.availableSymbols
+        .firstWhere((i) => i.symbol == _activeSymbol,
+            orElse: () => AppConstants.availableSymbols.first)
+        .display;
+
     return Scaffold(
       backgroundColor: AppTheme.black,
       appBar: AppBar(
-        title: const Text('XAUUSD Chart'),
+        title: Text('$displaySymbol Chart'),
         actions: [
+          SymbolSelector(compact: true, onSymbolChanged: _onSymbolChanged),
           IconButton(
             icon: const Icon(Icons.refresh, color: AppTheme.gold),
             onPressed: _loadChartData,

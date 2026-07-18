@@ -10,11 +10,12 @@ import '../utils/constants.dart';
 import '../utils/theme.dart';
 import '../widgets/price_card.dart';
 import '../widgets/signal_card.dart';
+import '../widgets/symbol_selector.dart';
 
-/// Home screen — displays current XAUUSD price info and a quick signal summary.
+/// Home screen — displays current price info and a quick signal summary.
 ///
-/// Auto-refreshes price data every 30 seconds. Shows a PriceCard with OHLC data,
-/// a compact SignalCard, and a banner ad at the bottom (non-premium users only).
+/// Supports switching between multiple instruments (XAUUSD, EURUSD, BTCUSD, etc.)
+/// via the symbol selector in the app bar. Auto-refreshes every 30 seconds.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -29,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   bool _isPremium = false;
   String? _errorMessage;
+  String _activeSymbol = AppConstants.defaultSymbol;
 
   // Price data
   double _price = 0;
@@ -48,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _loadSymbol();
     _loadBannerAd();
     _loadPremium();
   }
@@ -59,7 +61,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  /// Initialize AdMob banner ad
   void _loadBannerAd() {
     _bannerAd = BannerAd(
       adUnitId: AppConstants.bannerAdUnitId,
@@ -76,13 +77,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _bannerAd!.load();
   }
 
-  /// Load premium status from storage
   Future<void> _loadPremium() async {
     final premium = await _storage.isPremium();
     setState(() => _isPremium = premium);
   }
 
-  /// Fetch quote data and generate a signal from recent candlesticks
+  Future<void> _loadSymbol() async {
+    final sym = await _storage.getSelectedSymbol();
+    setState(() => _activeSymbol = sym);
+    _loadData();
+  }
+
   Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
@@ -90,12 +95,9 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      // Fetch quote (current price + OHLC)
-      final quote = await _api.getQuote();
-      final priceData = await _api.getRealTimePrice();
-
-      // Fetch candles for signal generation
-      final candles = await _api.getTimeSeries(interval: '1h', outputsize: 200);
+      final quote = await _api.getQuote(symbol: _activeSymbol);
+      final priceData = await _api.getRealTimePrice(symbol: _activeSymbol);
+      final candles = await _api.getTimeSeries(interval: '1h', outputsize: 200, symbol: _activeSymbol);
       final signal = SignalEngine.analyze(candles);
 
       setState(() {
@@ -114,6 +116,11 @@ class _HomeScreenState extends State<HomeScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  void _onSymbolChanged(String symbol) {
+    setState(() => _activeSymbol = symbol);
+    _loadData();
   }
 
   @override
@@ -161,6 +168,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // Symbol selector + current instrument label
+        Center(child: SymbolSelector(onSymbolChanged: _onSymbolChanged)),
+        const SizedBox(height: 16),
+
         // Price card
         PriceCard(
           price: _price,

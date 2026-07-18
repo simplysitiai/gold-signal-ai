@@ -38,3 +38,8 @@ lib/firebase_options.dart
 # OS
 .DS_Store
 Thumbs.db
+
+# Don't commit APK files
+*.apk
+*.zip
+GoldSignalAI*

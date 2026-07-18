@@ -40,7 +40,7 @@ class TradingSignal {
   }
 }
 
-/// Price alert model
+/// Price alert model — supports alerts for any trading instrument
 class PriceAlert {
   final String id;
   final double targetPrice;
@@ -48,6 +48,7 @@ class PriceAlert {
   final bool isActive;
   final DateTime createdAt;
   final bool triggered;
+  final String symbol; // e.g. "XAU/USD", "EUR/USD"
 
   PriceAlert({
     required this.id,
@@ -56,6 +57,7 @@ class PriceAlert {
     this.isActive = true,
     required this.createdAt,
     this.triggered = false,
+    this.symbol = 'XAU/USD',
   });
 
   Map<String, dynamic> toJson() => {
@@ -65,6 +67,7 @@ class PriceAlert {
     'isActive': isActive,
     'createdAt': createdAt.toIso8601String(),
     'triggered': triggered,
+    'symbol': symbol,
   };
 
   factory PriceAlert.fromJson(Map<String, dynamic> json) {
@@ -75,6 +78,7 @@ class PriceAlert {
       isActive: json['isActive'] as bool,
       createdAt: DateTime.parse(json['createdAt']),
       triggered: json['triggered'] as bool? ?? false,
+      symbol: json['symbol'] as String? ?? 'XAU/USD',
     );
   }
 }
