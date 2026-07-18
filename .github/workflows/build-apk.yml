@@ -36,43 +36,80 @@ jobs:
         run: flutter doctor -v
 
       # ─── Regenerate Android project from scratch ───
-      # Delete our manually-created android/ dir and let Flutter generate
-      # the correct Gradle structure, then apply our customizations.
       - name: Generate fresh Android project
         run: |
-          rm -rf android/
+          rm -rf android/ test/
           flutter create --platforms=android --org com.goldsignal --project-name gold_signal_ai .
 
-      # ─── Apply customizations ───
+      # ─── Apply customizations via Python (reliable XML editing) ───
       - name: Apply Android customizations
         run: |
-          # 1. Set minSdkVersion to 23 (required by google_mobile_ads)
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
+          python3 << 'PYEOF'
+          import re
 
-          # 2. Add AdMob, notification, and internet permissions to AndroidManifest
-          # Insert permissions before the <application> tag
-          sed -i '/<application/i\
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\
-              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\
-              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\
-              <uses-permission android:name="com.google.android.gms.permission.AD_ID" />' android/app/src/main/AndroidManifest.xml
+          # 1. Patch build.gradle — minSdkVersion 23
+          with open('android/app/build.gradle', 'r') as f:
+              gradle = f.read()
+          gradle = gradle.replace(
+              'minSdkVersion flutter.minSdkVersion',
+              'minSdkVersion 23'
+          )
+          # Use debug signing for release builds
+          gradle = gradle.replace(
+              'signingConfig signingConfigs.release',
+              'signingConfig signingConfigs.debug'
+          )
+          with open('android/app/build.gradle', 'w') as f:
+              f.write(gradle)
+          print("Patched build.gradle: minSdkVersion=23, debug signing")
 
-          # 3. Add AdMob App ID meta-data inside <application>
-          sed -i '/<application/a\
-              <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-3940256099942544~3347511713" />' android/app/src/main/AndroidManifest.xml
+          # 2. Patch AndroidManifest.xml — add permissions, AdMob, notifications
+          with open('android/app/src/main/AndroidManifest.xml', 'r') as f:
+              manifest = f.read()
 
-          # 4. Add notification service and receiver for price alerts
-          sed -i '/<\/activity>/a\
-              <service android:name="com.dexterous.flutterlocalnotifications.ForegroundService" android:exported="false" android:stopWithTask="true" />\
-              <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />' android/app/src/main/AndroidManifest.xml
+          # Add permissions before <application
+          permissions = """    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
 
-          # 5. Use debug signing for release builds (no keystore needed in CI)
-          sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
+"""
+          manifest = manifest.replace('<application', permissions + '<application')
 
-          echo "=== AndroidManifest.xml ==="
-          cat android/app/src/main/AndroidManifest.xml
-          echo "=== build.gradle (minSdk) ==="
-          grep minSdk android/app/build.gradle
+          # Add AdMob App ID after <application ...> opening tag
+          manifest = manifest.replace(
+              '<application',
+              '<application'
+          )
+          # Find the end of the <application ...> tag and insert meta-data
+          manifest = re.sub(
+              r'(<application[^>]*>)',
+              r'\1\n        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-3940256099942544~3347511713" />',
+              manifest
+          )
+
+          # Add notification service and receiver after </activity>
+          notification_components = """        <service android:name="com.dexterous.flutterlocalnotifications.ForegroundService" android:exported="false" android:stopWithTask="true" />
+        <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />"""
+          manifest = manifest.replace(
+              '</activity>',
+              '</activity>\n' + notification_components
+          )
+
+          with open('android/app/src/main/AndroidManifest.xml', 'w') as f:
+              f.write(manifest)
+          print("Patched AndroidManifest.xml: permissions, AdMob, notifications")
+
+          # 3. Verify the XML is valid
+          import xml.dom.minidom
+          try:
+              xml.dom.minidom.parse('android/app/src/main/AndroidManifest.xml')
+              print("XML validation: PASSED")
+          except Exception as e:
+              print(f"XML validation FAILED: {e}")
+              raise
+
+          PYEOF
 
       - name: Install dependencies
         run: flutter pub get
