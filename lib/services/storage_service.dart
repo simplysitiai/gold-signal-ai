@@ -3,50 +3,77 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/signal.dart';
 import '../utils/constants.dart';
 
-/// Local storage service for persisting API key, alerts, and settings
+/// Local storage service for persisting API key, alerts, and settings.
+///
+/// Implemented as a singleton so SharedPreferences is initialised once in
+/// main() and the same instance is reused everywhere — avoiding the
+/// LateInitializationError that occurs when a fresh instance is used before
+/// init() is awaited.
 class StorageService {
-  late SharedPreferences _prefs;
+  // ── Singleton boilerplate ────────────────────────────────────────────────
+  StorageService._internal();
+  static final StorageService _instance = StorageService._internal();
+  factory StorageService() => _instance;
+  // ────────────────────────────────────────────────────────────────────────
 
+  SharedPreferences? _prefs;
+
+  /// Must be called once in main() before runApp().
   Future<void> init() async {
-    _prefs = await SharedPreferences.getInstance();
+    _prefs ??= await SharedPreferences.getInstance();
+  }
+
+  /// Safe getter — falls back to a fresh instance if somehow called before init().
+  Future<SharedPreferences> get _p async {
+    _prefs ??= await SharedPreferences.getInstance();
+    return _prefs!;
   }
 
   // ===== API Key =====
 
   Future<String> getApiKey() async {
-    return _prefs.getString(AppConstants.keyApiKey) ?? AppConstants.defaultApiKey;
+    final p = await _p;
+    return p.getString(AppConstants.keyApiKey) ?? AppConstants.defaultApiKey;
   }
 
   Future<void> setApiKey(String key) async {
-    await _prefs.setString(AppConstants.keyApiKey, key);
+    final p = await _p;
+    await p.setString(AppConstants.keyApiKey, key);
   }
 
   Future<void> clearApiKey() async {
-    await _prefs.remove(AppConstants.keyApiKey);
+    final p = await _p;
+    await p.remove(AppConstants.keyApiKey);
   }
 
   // ===== Premium Status =====
 
   Future<bool> isPremium() async {
-    return _prefs.getBool(AppConstants.keyPremium) ?? false;
+    final p = await _p;
+    return p.getBool(AppConstants.keyPremium) ?? false;
   }
 
   Future<void> setPremium(bool value) async {
-    await _prefs.setBool(AppConstants.keyPremium, value);
+    final p = await _p;
+    await p.setBool(AppConstants.keyPremium, value);
   }
 
   // ===== Price Alerts =====
 
   Future<List<PriceAlert>> getAlerts() async {
-    final jsonStr = _prefs.getString(AppConstants.keyAlerts);
+    final p = await _p;
+    final jsonStr = p.getString(AppConstants.keyAlerts);
     if (jsonStr == null) return [];
     final list = json.decode(jsonStr) as List;
-    return list.map((e) => PriceAlert.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => PriceAlert.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<void> saveAlerts(List<PriceAlert> alerts) async {
+    final p = await _p;
     final jsonStr = json.encode(alerts.map((a) => a.toJson()).toList());
-    await _prefs.setString(AppConstants.keyAlerts, jsonStr);
+    await p.setString(AppConstants.keyAlerts, jsonStr);
   }
 
   Future<void> addAlert(PriceAlert alert) async {
@@ -70,7 +97,7 @@ class StorageService {
     }
   }
 
-  /// Mark an alert as triggered (when price reaches target)
+  /// Mark an alert as triggered (when price reaches target).
   Future<void> markAlertTriggered(String id) async {
     final alerts = await getAlerts();
     final idx = alerts.indexWhere((a) => a.id == id);
