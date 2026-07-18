@@ -74,7 +74,7 @@ class PriceCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     const Text(
-                      AppConstants.symbolDisplay,
+                      AppConstants.defaultSymbolDisplay,
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,

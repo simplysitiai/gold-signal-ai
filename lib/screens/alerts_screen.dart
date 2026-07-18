@@ -17,7 +17,7 @@ class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
 
   @override
-  State<AlertsScreenState> createState() => _AlertsScreenState();
+  State<AlertsScreen> createState() => _AlertsScreenState();
 }
 
 class _AlertsScreenState extends State<AlertsScreen> {

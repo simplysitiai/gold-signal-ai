@@ -276,7 +276,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 _buildAboutTile('App Name', AppConstants.appName),
                 _buildAboutTile('Version', AppConstants.appVersion),
-                _buildAboutTile('Symbol', AppConstants.symbolDisplay),
+                _buildAboutTile('Symbol', AppConstants.defaultSymbolDisplay),
                 _buildAboutTile('Data Provider', 'Twelve Data'),
                 _buildAboutTile('Framework', 'Flutter'),
               ],

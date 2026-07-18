@@ -6,6 +6,7 @@ import '../models/signal.dart';
 import '../services/api_service.dart';
 import '../services/signal_engine.dart';
 import '../services/indicator_service.dart';
+import '../models/indicator_data.dart';
 import '../services/storage_service.dart';
 import '../utils/constants.dart';
 import '../utils/theme.dart';
