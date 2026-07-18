@@ -1,8 +1,5 @@
 # .github/workflows/build-apk.yml
 # Gold Signal AI — Automatic Flutter APK build
-# Triggers on push to main, pull requests, and manual dispatch
-# Uploads the APK as a GitHub Actions artifact + creates a release on tags
-
 name: Build APK
 
 on:
@@ -38,11 +35,44 @@ jobs:
       - name: Verify Flutter installation
         run: flutter doctor -v
 
-      # ─── Regenerate Android project files that Flutter expects ───
-      # Running `flutter create` patches the Android Gradle structure
-      # without overwriting existing Dart source code.
-      - name: Generate Android platform files
-        run: flutter create --platforms=android --org com.goldsignal --project-name gold_signal_ai .
+      # ─── Regenerate Android project from scratch ───
+      # Delete our manually-created android/ dir and let Flutter generate
+      # the correct Gradle structure, then apply our customizations.
+      - name: Generate fresh Android project
+        run: |
+          rm -rf android/
+          flutter create --platforms=android --org com.goldsignal --project-name gold_signal_ai .
+
+      # ─── Apply customizations ───
+      - name: Apply Android customizations
+        run: |
+          # 1. Set minSdkVersion to 23 (required by google_mobile_ads)
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
+
+          # 2. Add AdMob, notification, and internet permissions to AndroidManifest
+          # Insert permissions before the <application> tag
+          sed -i '/<application/i\
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\
+              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\
+              <uses-permission android:name="com.google.android.gms.permission.AD_ID" />' android/app/src/main/AndroidManifest.xml
+
+          # 3. Add AdMob App ID meta-data inside <application>
+          sed -i '/<application/a\
+              <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-3940256099942544~3347511713" />' android/app/src/main/AndroidManifest.xml
+
+          # 4. Add notification service and receiver for price alerts
+          sed -i '/<\/activity>/a\
+              <service android:name="com.dexterous.flutterlocalnotifications.ForegroundService" android:exported="false" android:stopWithTask="true" />\
+              <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />' android/app/src/main/AndroidManifest.xml
+
+          # 5. Use debug signing for release builds (no keystore needed in CI)
+          sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/' android/app/build.gradle
+
+          echo "=== AndroidManifest.xml ==="
+          cat android/app/src/main/AndroidManifest.xml
+          echo "=== build.gradle (minSdk) ==="
+          grep minSdk android/app/build.gradle
 
       - name: Install dependencies
         run: flutter pub get
