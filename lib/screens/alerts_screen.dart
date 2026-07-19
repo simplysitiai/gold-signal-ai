@@ -63,7 +63,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
       (i) => i.symbol == _activeSymbol,
       orElse: () => AppConstants.availableSymbols.first,
     );
-    return price.toStringAsFixed(inst.decimalPlaces);
+    return price.toStringAsFixed(inst.decimals);
   }
 
     void _onSymbolChanged(String symbol) {
