@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:workmanager/workmanager.dart';
 
 import 'services/storage_service.dart';
 import 'utils/theme.dart';
@@ -9,11 +10,31 @@ import 'screens/chart_screen.dart';
 import 'screens/signal_screen.dart';
 import 'screens/alerts_screen.dart';
 import 'screens/settings_screen.dart';
+import 'background/alert_background_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MobileAds.instance.initialize();
   await StorageService().init();
+
+  // Register WorkManager background task for price alerts
+  // This runs even when the app is closed or the phone is locked
+  await Workmanager().initialize(
+    callbackDispatcher,
+    isInDebugMode: false,
+  );
+
+  // Schedule periodic alert check every 15 minutes (minimum WorkManager interval)
+  await Workmanager().registerPeriodicTask(
+    'price-alert-check',
+    kAlertCheckTask,
+    frequency: const Duration(minutes: 15),
+    constraints: Constraints(
+      networkType: NetworkType.connected,
+    ),
+    existingWorkPolicy: ExistingWorkPolicy.keep,
+  );
+
   runApp(const GoldSignalAIApp());
 }
 
@@ -32,7 +53,6 @@ class GoldSignalAIApp extends StatelessWidget {
 }
 
 /// Main navigation — holds the single source of truth for the active symbol.
-/// All tabs receive the same symbol and call onSymbolChanged to update all tabs together.
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
 
@@ -59,8 +79,6 @@ class _MainNavigationState extends State<MainNavigation> {
     });
   }
 
-  /// Called by any tab when user picks a new symbol.
-  /// Persists to storage and rebuilds all tabs with the new symbol.
   void _onSymbolChanged(String symbol) async {
     await StorageService().setSelectedSymbol(symbol);
     setState(() => _activeSymbol = symbol);
@@ -68,7 +86,6 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
-    // Don't render screens until symbol is loaded (avoids flash with wrong symbol)
     if (!_symbolLoaded) {
       return Scaffold(
         backgroundColor: AppTheme.black,
