@@ -48,6 +48,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     _initNotifications();
     _loadAlerts();
     _loadAlertSound();
+    _fetchCurrentPrice();
   }
 
   Future<void> _initNotifications() async {
@@ -190,6 +191,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     if (oldWidget.activeSymbol != widget.activeSymbol) {
       setState(() => _activeSymbol = widget.activeSymbol);
       _loadAlerts();
+      _fetchCurrentPrice();
     }
   }
   @override
@@ -210,7 +212,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
       appBar: AppBar(
         title: const Text('Price Alerts'),
         actions: [
-          SymbolSelector(compact: true, onSymbolChanged: _onSymbolChanged),
+          SymbolSelector(
+              selectedSymbol: _activeSymbol,
+              compact: true, onSymbolChanged: _onSymbolChanged),
           IconButton(
             icon: const Icon(Icons.refresh, color: AppTheme.gold),
             onPressed: () {
@@ -225,8 +229,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           // Current price display
-          if (_currentPrice > 0)
-            Card(
+          Card(
               color: AppTheme.surface,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
@@ -235,16 +238,29 @@ class _AlertsScreenState extends State<AlertsScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('$displaySymbol Price',
-                        style: const TextStyle(
-                            color: Colors.white54, fontSize: 14)),
-                    Text(
-                      '\$${_currentPrice.toStringAsFixed(2)}',
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('$displaySymbol',
+                            style: const TextStyle(
+                                color: AppTheme.gold, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                        const Text('Current Price',
+                            style: TextStyle(color: Colors.white38, fontSize: 11)),
+                      ],
+                    ),
+                    _currentPrice > 0
+                      ? Text(
+                          _formatPrice(_currentPrice),
                       style: const TextStyle(
                           color: AppTheme.gold,
                           fontSize: 22,
                           fontWeight: FontWeight.bold),
-                    ),
+                        )
+                      : const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(color: AppTheme.gold, strokeWidth: 2),
+                        ),
                   ],
                 ),
               ),

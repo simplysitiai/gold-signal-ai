@@ -3,14 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../models/candle.dart';
-import '../models/signal.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
-import '../services/signal_engine.dart';
 import '../utils/constants.dart';
 import '../utils/theme.dart';
 import '../widgets/price_card.dart';
-import '../widgets/signal_card.dart';
 import '../widgets/symbol_selector.dart';
 
 /// Home screen — displays current price info and a quick signal summary.
@@ -51,7 +48,6 @@ class _HomeScreenState extends State<HomeScreen> {
   double _candleWidth = AppConstants.defaultCandleWidth;
 
   // Signal data
-  TradingSignal? _signal;
 
   // Auto-refresh timer
   Timer? _refreshTimer;
@@ -121,9 +117,6 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final quote = await _api.getQuote(symbol: _activeSymbol);
       final priceData = await _api.getRealTimePrice(symbol: _activeSymbol);
-      final candles = await _api.getTimeSeries(interval: '1h', outputsize: 200, symbol: _activeSymbol);
-      final signal = SignalEngine.analyze(candles);
-
       setState(() {
         _price = double.parse(priceData['price'].toString());
         _dailyOpen = double.parse(quote['open'].toString());
@@ -131,7 +124,6 @@ class _HomeScreenState extends State<HomeScreen> {
         _dailyLow = double.parse(quote['low'].toString());
         _dailyChange = double.parse((quote['change'] ?? '0').toString());
         _dailyChangePercent = double.parse((quote['percent_change'] ?? '0').toString());
-        _signal = signal;
         _isLoading = false;
       });
     } catch (e) {
@@ -207,7 +199,9 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         // Symbol selector + current instrument label
-        Center(child: SymbolSelector(onSymbolChanged: _onSymbolChanged)),
+        Center(child: SymbolSelector(
+              selectedSymbol: _activeSymbol,
+              onSymbolChanged: _onSymbolChanged)),
         const SizedBox(height: 16),
 
         // Price card
@@ -229,20 +223,32 @@ class _HomeScreenState extends State<HomeScreen> {
         }),
         const SizedBox(height: 16),
 
-        // Quick signal summary
-        if (_signal != null) ...[
-          const Text(
-            'LATEST SIGNAL',
-            style: TextStyle(
-              color: Colors.white38,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
+        // Signal tab teaser
+        InkWell(
+          onTap: () {}, // navigating handled at parent level
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppTheme.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppTheme.gold.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.insights, color: AppTheme.gold, size: 22),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'View full signal & indicator breakdown',
+                    style: TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.white38),
+              ],
             ),
           ),
-          const SizedBox(height: 8),
-          SignalCard(signal: _signal!),
-        ],
+        ),
 
         const SizedBox(height: 16),
 

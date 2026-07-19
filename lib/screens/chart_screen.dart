@@ -135,7 +135,9 @@ class _ChartScreenState extends State<ChartScreen> {
       appBar: AppBar(
         title: Text('$displaySymbol Chart'),
         actions: [
-          SymbolSelector(compact: true, onSymbolChanged: _onSymbolChanged),
+          SymbolSelector(
+              selectedSymbol: _activeSymbol,
+              compact: true, onSymbolChanged: _onSymbolChanged),
           IconButton(
             icon: const Icon(Icons.refresh, color: AppTheme.gold),
             onPressed: _loadChartData,

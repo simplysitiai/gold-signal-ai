@@ -151,7 +151,9 @@ class _SignalScreenState extends State<SignalScreen> {
       appBar: AppBar(
         title: Text('$displaySymbol Signal'),
         actions: [
-          SymbolSelector(compact: true, onSymbolChanged: _onSymbolChanged),
+          SymbolSelector(
+              selectedSymbol: _activeSymbol,
+              compact: true, onSymbolChanged: _onSymbolChanged),
           IconButton(
             icon: const Icon(Icons.refresh, color: AppTheme.gold),
             onPressed: _loadSignal,
