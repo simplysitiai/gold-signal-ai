@@ -191,18 +191,22 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 16),
 
         // Price card
-        PriceCard(
-          price: _price,
-          dailyChange: _dailyChange,
-          dailyChangePercent: _dailyChangePercent,
-          dailyHigh: _dailyHigh,
-          dailyLow: _dailyLow,
-          dailyOpen: _dailyOpen,
-          symbolDisplay: AppConstants.availableSymbols.firstWhere(
+        Builder(builder: (context) {
+          final instrument = AppConstants.availableSymbols.firstWhere(
             (i) => i.symbol == _activeSymbol,
             orElse: () => AppConstants.availableSymbols.first,
-          ).display,
-        ),
+          );
+          return PriceCard(
+            price: _price,
+            dailyChange: _dailyChange,
+            dailyChangePercent: _dailyChangePercent,
+            dailyHigh: _dailyHigh,
+            dailyLow: _dailyLow,
+            dailyOpen: _dailyOpen,
+            symbolDisplay: instrument.display,
+            symbolKey: instrument.symbol,
+          );
+        }),
         const SizedBox(height: 16),
 
         // Quick signal summary

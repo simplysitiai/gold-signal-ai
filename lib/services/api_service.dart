@@ -12,25 +12,18 @@ import 'storage_service.dart';
 class ApiService {
   final StorageService _storage = StorageService();
 
-  Future<String> _getApiKey() async {
-    final provider = await _storage.getApiProvider();
-    if (provider == AppConstants.apiProviderAlphaVantage) {
-      return await _storage.getAlphaVantageKey();
-    }
-    return await _storage.getApiKey();
-  }
-
-  Future<String> _getSymbol({String? symbol}) async {
-    return symbol ?? await _storage.getSelectedSymbol();
-  }
-
+  Future<String> _getTdKey() async => _storage.getApiKey();
+  Future<String> _getAvKey() async => _storage.getAlphaVantageKey();
   Future<String> _getProvider() async => _storage.getApiProvider();
+
+  Future<String> _getSymbol({String? symbol}) async =>
+      symbol ?? await _storage.getSelectedSymbol();
 
   // ─── Public API ────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> getRealTimePrice({String? symbol}) async {
-    final provider = await _getProvider();
     final sym = await _getSymbol(symbol: symbol);
+    final provider = await _getProvider();
     if (provider == AppConstants.apiProviderAlphaVantage) {
       return _avGetPrice(sym);
     }
@@ -38,8 +31,8 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> getQuote({String? symbol}) async {
-    final provider = await _getProvider();
     final sym = await _getSymbol(symbol: symbol);
+    final provider = await _getProvider();
     if (provider == AppConstants.apiProviderAlphaVantage) {
       return _avGetQuote(sym);
     }
@@ -51,8 +44,8 @@ class ApiService {
     int outputsize = 200,
     String? symbol,
   }) async {
-    final provider = await _getProvider();
     final sym = await _getSymbol(symbol: symbol);
+    final provider = await _getProvider();
     if (provider == AppConstants.apiProviderAlphaVantage) {
       return _avGetTimeSeries(sym, interval, outputsize);
     }
@@ -67,12 +60,13 @@ class ApiService {
             '&from_currency=XAU&to_currency=USD'
             '&apikey=$apiKey';
         final r = await http.get(Uri.parse(url));
-        final d = json.decode(r.body);
-        return d['Realtime Currency Exchange Rate'] != null;
+        final d = json.decode(r.body) as Map<String, dynamic>;
+        return d.containsKey('Realtime Currency Exchange Rate');
       }
-      final url = '${AppConstants.twelveDataBaseUrl}/price?symbol=XAU/USD&apikey=$apiKey';
+      final url =
+          '${AppConstants.twelveDataBaseUrl}/price?symbol=XAU/USD&apikey=$apiKey';
       final r = await http.get(Uri.parse(url));
-      final d = json.decode(r.body);
+      final d = json.decode(r.body) as Map<String, dynamic>;
       return d['status'] != 'error';
     } catch (_) {
       return false;
@@ -82,37 +76,42 @@ class ApiService {
   // ─── Twelve Data ───────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> _tdGetPrice(String symbol) async {
-    final key = await _storage.getApiKey();
-    final url = '${AppConstants.twelveDataBaseUrl}/price?symbol=$symbol&apikey=$key';
+    final key = await _getTdKey();
+    final url =
+        '${AppConstants.twelveDataBaseUrl}/price?symbol=$symbol&apikey=$key';
     final r = await http.get(Uri.parse(url));
-    final d = json.decode(r.body);
+    final d = json.decode(r.body) as Map<String, dynamic>;
     if (d['status'] == 'error') throw Exception(d['message'] ?? 'Twelve Data error');
     return d;
   }
 
   Future<Map<String, dynamic>> _tdGetQuote(String symbol) async {
-    final key = await _storage.getApiKey();
-    final url = '${AppConstants.twelveDataBaseUrl}/quote?symbol=$symbol&apikey=$key';
+    final key = await _getTdKey();
+    final url =
+        '${AppConstants.twelveDataBaseUrl}/quote?symbol=$symbol&apikey=$key';
     final r = await http.get(Uri.parse(url));
-    final d = json.decode(r.body);
+    final d = json.decode(r.body) as Map<String, dynamic>;
     if (d['status'] == 'error') throw Exception(d['message'] ?? 'Twelve Data error');
     return d;
   }
 
-  Future<List<Candle>> _tdGetTimeSeries(String symbol, String interval, int outputsize) async {
-    final key = await _storage.getApiKey();
+  Future<List<Candle>> _tdGetTimeSeries(
+      String symbol, String interval, int outputsize) async {
+    final key = await _getTdKey();
     final url = '${AppConstants.twelveDataBaseUrl}/time_series'
         '?symbol=$symbol&interval=$interval&outputsize=$outputsize&apikey=$key';
     final r = await http.get(Uri.parse(url));
-    final d = json.decode(r.body);
+    final d = json.decode(r.body) as Map<String, dynamic>;
     if (d['status'] == 'error') throw Exception(d['message'] ?? 'Twelve Data error');
-    final values = d['values'] as List;
-    return values.map((v) => Candle.fromTwelveData(v)).toList().reversed.toList();
+    final values = d['values'] as List<dynamic>;
+    final candles =
+        values.map((v) => Candle.fromTwelveData(v as Map<String, dynamic>)).toList();
+    return candles.reversed.toList();
   }
 
   // ─── Alpha Vantage ─────────────────────────────────────────────────────────
 
-  /// Convert "XAU/USD" → from="XAU" to="USD" for Alpha Vantage FX/crypto endpoints
+  /// Split "XAU/USD" → {from: "XAU", to: "USD"}
   Map<String, String> _splitSymbol(String symbol) {
     final parts = symbol.replaceAll(' ', '').split('/');
     if (parts.length == 2) return {'from': parts[0], 'to': parts[1]};
@@ -120,27 +119,24 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> _avGetPrice(String symbol) async {
-    final key = await _storage.getAlphaVantageKey();
+    final key = await _getAvKey();
     final sp = _splitSymbol(symbol);
-
-    // Try FX first, fall back to CURRENCY_EXCHANGE_RATE for commodities
     final url = '${AppConstants.alphaVantageBaseUrl}/query'
         '?function=CURRENCY_EXCHANGE_RATE'
         '&from_currency=${sp['from']}&to_currency=${sp['to']}'
         '&apikey=$key';
     final r = await http.get(Uri.parse(url));
-    final d = json.decode(r.body);
-    final rate = d['Realtime Currency Exchange Rate'];
-    if (rate == null) throw Exception('Alpha Vantage: no data for $symbol. Check API key.');
+    final d = json.decode(r.body) as Map<String, dynamic>;
+    final rate = d['Realtime Currency Exchange Rate'] as Map<String, dynamic>?;
+    if (rate == null) {
+      throw Exception('Alpha Vantage: no data for $symbol. Check API key at alphavantage.co');
+    }
     return {'price': rate['5. Exchange Rate']};
   }
 
   Future<Map<String, dynamic>> _avGetQuote(String symbol) async {
-    // Alpha Vantage doesn't have a single "quote" endpoint for FX
-    // We build a minimal quote from the exchange rate + daily OHLC
     final priceData = await _avGetPrice(symbol);
     final price = double.parse(priceData['price'].toString());
-    // Fetch daily series for OHLC
     try {
       final candles = await _avGetTimeSeries(symbol, '1day', 2);
       if (candles.isNotEmpty) {
@@ -165,14 +161,14 @@ class ApiService {
     };
   }
 
-  Future<List<Candle>> _avGetTimeSeries(String symbol, String interval, int outputsize) async {
-    final key = await _storage.getAlphaVantageKey();
+  Future<List<Candle>> _avGetTimeSeries(
+      String symbol, String interval, int outputsize) async {
+    final key = await _getAvKey();
     final sp = _splitSymbol(symbol);
     final avInterval = AppConstants.avIntervalMap[interval] ?? '60min';
 
     String url;
     if (avInterval == 'daily') {
-      // FX_DAILY for forex/commodities
       url = '${AppConstants.alphaVantageBaseUrl}/query'
           '?function=FX_DAILY'
           '&from_symbol=${sp['from']}&to_symbol=${sp['to']}'
@@ -188,14 +184,13 @@ class ApiService {
     }
 
     final r = await http.get(Uri.parse(url));
-    final d = json.decode(r.body);
+    final d = json.decode(r.body) as Map<String, dynamic>;
 
     if (d.containsKey('Error Message')) throw Exception('Alpha Vantage: ${d["Error Message"]}');
     if (d.containsKey('Note')) throw Exception('Alpha Vantage rate limit reached. Try again in a minute.');
     if (d.containsKey('Information')) throw Exception('Alpha Vantage: ${d["Information"]}');
 
-    // Find the time series key (varies by function)
-    final seriesKey = d.keys.firstWhere(
+    final seriesKey = (d.keys).firstWhere(
       (k) => k.startsWith('Time Series') || k.startsWith('FX'),
       orElse: () => '',
     );
@@ -205,7 +200,7 @@ class ApiService {
     final candles = series.entries.map((e) {
       final v = e.value as Map<String, dynamic>;
       return Candle(
-        time: DateTime.parse(e.key),
+        timestamp: DateTime.parse(e.key),
         open: double.parse(v['1. open'].toString()),
         high: double.parse(v['2. high'].toString()),
         low: double.parse(v['3. low'].toString()),
@@ -214,8 +209,7 @@ class ApiService {
       );
     }).toList();
 
-    // Sort chronologically (AV returns newest first)
-    candles.sort((a, b) => a.time.compareTo(b.time));
+    candles.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     return candles.length > outputsize
         ? candles.sublist(candles.length - outputsize)
         : candles;

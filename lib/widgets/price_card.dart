@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../utils/theme.dart';
 import '../utils/constants.dart';
 
 /// Price card showing current price, daily OHLC, and change for any instrument.
+///
+/// Uses per-symbol decimal precision:
+///   Gold/BTC    → 2 decimals  (e.g. 3,342.55)
+///   Forex major → 5 decimals  (e.g. 1.14237)
+///   JPY pairs   → 3 decimals  (e.g. 158.412)
 class PriceCard extends StatelessWidget {
   final double price;
   final double dailyChange;
@@ -12,7 +16,8 @@ class PriceCard extends StatelessWidget {
   final double dailyLow;
   final double dailyOpen;
   final double? spread;
-  final String? symbolDisplay; // Dynamic — shows active symbol
+  final String? symbolDisplay; // e.g. "EURUSD"
+  final String? symbolKey;     // API key e.g. "EUR/USD" — used for decimal lookup
 
   const PriceCard({
     super.key,
@@ -24,20 +29,25 @@ class PriceCard extends StatelessWidget {
     required this.dailyOpen,
     this.spread,
     this.symbolDisplay,
+    this.symbolKey,
   });
+
+  /// Return the appropriate number of decimals for this instrument
+  int get _decimals => AppConstants.decimalsForSymbol(symbolKey ?? '');
+
+  String _fmtPrice(double v) => v.toStringAsFixed(_decimals);
 
   @override
   Widget build(BuildContext context) {
-    final priceFormatter = NumberFormat('#,##0.00####', 'en_US');
-    final changeFormatter = NumberFormat('+#,##0.00####;-#,##0.00####', 'en_US');
-
     final isPositive = dailyChange >= 0;
     final changeColor = isPositive ? AppTheme.green : AppTheme.red;
     final changeIcon = isPositive ? Icons.trending_up : Icons.trending_down;
 
     final String changeSign = isPositive ? '+' : '';
     final String changePercentText = '$changeSign${dailyChangePercent.toStringAsFixed(2)}%';
-    final String changeValText = changeFormatter.format(dailyChange);
+    // For change value, use same decimals as price
+    final String changeValText =
+        '${dailyChange >= 0 ? "+" : ""}${dailyChange.toStringAsFixed(_decimals)}';
 
     final displayLabel = symbolDisplay ?? AppConstants.defaultSymbolDisplay;
 
@@ -106,13 +116,15 @@ class PriceCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: [
-                Text(
-                  '\$${priceFormatter.format(price)}',
-                  style: const TextStyle(
-                    color: AppTheme.gold,
-                    fontSize: 30,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: -0.5,
+                Flexible(
+                  child: Text(
+                    _fmtPrice(price),
+                    style: const TextStyle(
+                      color: AppTheme.gold,
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.5,
+                    ),
                   ),
                 ),
                 Row(
@@ -124,7 +136,7 @@ class PriceCard extends StatelessWidget {
                       '$changeValText ($changePercentText)',
                       style: TextStyle(
                         color: changeColor,
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -140,21 +152,11 @@ class PriceCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: _buildGridItem(
-                    label: 'DAILY HIGH',
-                    value: '\$${priceFormatter.format(dailyHigh)}',
-                    icon: Icons.arrow_upward,
-                    iconColor: AppTheme.green,
-                  ),
+                  child: _gridItem('DAILY HIGH', _fmtPrice(dailyHigh), Icons.arrow_upward, AppTheme.green),
                 ),
                 Container(height: 40, width: 1, color: Colors.white10),
                 Expanded(
-                  child: _buildGridItem(
-                    label: 'DAILY LOW',
-                    value: '\$${priceFormatter.format(dailyLow)}',
-                    icon: Icons.arrow_downward,
-                    iconColor: AppTheme.red,
-                  ),
+                  child: _gridItem('DAILY LOW', _fmtPrice(dailyLow), Icons.arrow_downward, AppTheme.red),
                 ),
               ],
             ),
@@ -162,20 +164,15 @@ class PriceCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: _buildGridItem(
-                    label: 'DAILY OPEN',
-                    value: '\$${priceFormatter.format(dailyOpen)}',
-                    icon: Icons.door_front_door_outlined,
-                    iconColor: Colors.grey,
-                  ),
+                  child: _gridItem('DAILY OPEN', _fmtPrice(dailyOpen), Icons.door_front_door_outlined, Colors.grey),
                 ),
                 Container(height: 40, width: 1, color: Colors.white10),
                 Expanded(
-                  child: _buildGridItem(
-                    label: 'SPREAD',
-                    value: spread != null ? '${spread!.toStringAsFixed(4)}' : 'N/A',
-                    icon: Icons.unfold_more,
-                    iconColor: AppTheme.gold,
+                  child: _gridItem(
+                    'SPREAD',
+                    spread != null ? spread!.toStringAsFixed(_decimals) : 'N/A',
+                    Icons.unfold_more,
+                    AppTheme.gold,
                   ),
                 ),
               ],
@@ -186,12 +183,7 @@ class PriceCard extends StatelessWidget {
     );
   }
 
-  Widget _buildGridItem({
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color iconColor,
-  }) {
+  Widget _gridItem(String label, String value, IconData icon, Color iconColor) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12.0),
       child: Column(
@@ -201,26 +193,18 @@ class PriceCard extends StatelessWidget {
             children: [
               Icon(icon, color: iconColor.withOpacity(0.7), size: 12),
               const SizedBox(width: 4),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white38,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-              ),
+              Text(label,
+                  style: const TextStyle(
+                      color: Colors.white38,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5)),
             ],
           ),
           const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text(value,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
         ],
       ),
     );
