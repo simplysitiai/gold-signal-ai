@@ -58,7 +58,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
     await _notifications.initialize(initSettings);
   }
 
-  void _onSymbolChanged(String symbol) {
+  String _formatPrice(double price) {
+    final inst = AppConstants.availableSymbols.firstWhere(
+      (i) => i.symbol == _activeSymbol,
+      orElse: () => AppConstants.availableSymbols.first,
+    );
+    return price.toStringAsFixed(inst.decimalPlaces);
+  }
+
+    void _onSymbolChanged(String symbol) {
     widget.onSymbolChanged(symbol);
   }
 
