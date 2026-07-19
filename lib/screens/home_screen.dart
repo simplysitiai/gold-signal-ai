@@ -18,7 +18,14 @@ import '../widgets/symbol_selector.dart';
 /// Supports switching between multiple instruments (XAUUSD, EURUSD, BTCUSD, etc.)
 /// via the symbol selector in the app bar. Auto-refreshes every 30 seconds.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final String activeSymbol;
+  final void Function(String) onSymbolChanged;
+
+  const HomeScreen({
+    super.key,
+    required this.activeSymbol,
+    required this.onSymbolChanged,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -31,7 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   bool _isPremium = false;
   String? _errorMessage;
-  String _activeSymbol = AppConstants.defaultSymbol;
+  late String _activeSymbol;
 
   // Price data
   double _price = 0;
@@ -54,12 +61,21 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSymbol();
+    _activeSymbol = widget.activeSymbol;
     _applyRefreshInterval();
     _loadBannerAd();
     _loadPremium();
   }
 
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeSymbol != widget.activeSymbol) {
+      setState(() => _activeSymbol = widget.activeSymbol);
+      _loadData();
+    }
+  }
   @override
   void dispose() {
     _refreshTimer?.cancel();
@@ -133,12 +149,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _applyRefreshInterval() async {
     final interval = await _storage.getRefreshInterval();
+    final cw = await _storage.getCandleWidth();
+    setState(() { _refreshInterval = interval; _candleWidth = cw; });
     _startAutoRefresh(interval);
   }
 
   void _onSymbolChanged(String symbol) {
-    setState(() => _activeSymbol = symbol);
-    _loadData();
+    widget.onSymbolChanged(symbol);
   }
 
   @override
@@ -162,10 +179,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          // Always-visible refresh icon
           IconButton(
             icon: const Icon(Icons.refresh, color: AppTheme.gold),
             onPressed: _loadData,
-            tooltip: 'Refresh',
+            tooltip: 'Refresh now',
           ),
         ],
       ),

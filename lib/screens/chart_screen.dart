@@ -15,7 +15,14 @@ import '../widgets/symbol_selector.dart';
 /// 15m, 30m, 1H, 4H, and 1D intervals. EMA 20 and EMA 50 overlay lines are
 /// drawn on the chart. Also shows a compact indicator summary below.
 class ChartScreen extends StatefulWidget {
-  const ChartScreen({super.key});
+  final String activeSymbol;
+  final void Function(String) onSymbolChanged;
+
+  const ChartScreen({
+    super.key,
+    required this.activeSymbol,
+    required this.onSymbolChanged,
+  });
 
   @override
   State<ChartScreen> createState() => _ChartScreenState();
@@ -26,7 +33,7 @@ class _ChartScreenState extends State<ChartScreen> {
   final StorageService _storage = StorageService();
 
   int _selectedIntervalIndex = 4; // Default to 1H
-  String _activeSymbol = AppConstants.defaultSymbol;
+  late String _activeSymbol;
   List<Candle> _candles = [];
   List<double> _ema20Values = [];
   List<double> _ema50Values = [];
@@ -37,7 +44,17 @@ class _ChartScreenState extends State<ChartScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSymbol();
+    _activeSymbol = widget.activeSymbol;
+    _loadChartData();
+  }
+
+  @override
+  void didUpdateWidget(covariant ChartScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeSymbol != widget.activeSymbol) {
+      setState(() => _activeSymbol = widget.activeSymbol);
+      _loadChartData();
+    }
   }
 
   Future<void> _loadSymbol() async {
@@ -49,8 +66,7 @@ class _ChartScreenState extends State<ChartScreen> {
   }
 
   void _onSymbolChanged(String symbol) {
-    setState(() => _activeSymbol = symbol);
-    _loadChartData();
+    widget.onSymbolChanged(symbol);
   }
 
   Future<void> _loadChartData() async {

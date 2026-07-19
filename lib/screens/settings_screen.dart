@@ -7,7 +7,12 @@ import '../utils/theme.dart';
 
 /// Settings screen — API keys, provider selection, refresh interval, premium.
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  final void Function(String)? onSymbolChanged;
+
+  const SettingsScreen({
+    super.key,
+    this.onSymbolChanged,
+  });
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -315,7 +320,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                   Center(
-                    child: Text('Width: \${_candleWidth.toStringAsFixed(1)} px',
+                    child: Text('Width: ${_candleWidth.toStringAsFixed(1)} px',
                         style: const TextStyle(color: AppTheme.gold, fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
                 ],

@@ -14,7 +14,14 @@ import '../widgets/symbol_selector.dart';
 /// crosses above or below that level. Alerts are stored locally via
 /// SharedPreferences and can be checked manually.
 class AlertsScreen extends StatefulWidget {
-  const AlertsScreen({super.key});
+  final String activeSymbol;
+  final void Function(String) onSymbolChanged;
+
+  const AlertsScreen({
+    super.key,
+    required this.activeSymbol,
+    required this.onSymbolChanged,
+  });
 
   @override
   State<AlertsScreen> createState() => _AlertsScreenState();
@@ -26,7 +33,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   List<PriceAlert> _alerts = [];
   double _currentPrice = 0;
-  String _activeSymbol = AppConstants.defaultSymbol;
+  late String _activeSymbol;
   String _alertSound = AppConstants.alertSoundDefault;
   final _targetPriceController = TextEditingController();
 
@@ -37,8 +44,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
   @override
   void initState() {
     super.initState();
+    _activeSymbol = widget.activeSymbol;
     _initNotifications();
-    _loadSymbol();
+    _loadAlerts();
   }
 
   Future<void> _initNotifications() async {
@@ -57,10 +65,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   void _onSymbolChanged(String symbol) {
-    setState(() {
-      _activeSymbol = symbol;
-      _currentPrice = 0;
-    });
+    widget.onSymbolChanged(symbol);
+  });
     _fetchCurrentPrice();
     _loadAlerts();
   }
@@ -182,6 +188,15 @@ class _AlertsScreenState extends State<AlertsScreen> {
     );
   }
 
+
+  @override
+  void didUpdateWidget(covariant AlertsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeSymbol != widget.activeSymbol) {
+      setState(() => _activeSymbol = widget.activeSymbol);
+      _loadAlerts();
+    }
+  }
   @override
   void dispose() {
     _targetPriceController.dispose();

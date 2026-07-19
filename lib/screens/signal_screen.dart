@@ -23,7 +23,14 @@ import '../widgets/symbol_selector.dart';
 /// - A "Rewarded Analysis" button (watch an ad for deeper analysis)
 /// - Disclaimer text
 class SignalScreen extends StatefulWidget {
-  const SignalScreen({super.key});
+  final String activeSymbol;
+  final void Function(String) onSymbolChanged;
+
+  const SignalScreen({
+    super.key,
+    required this.activeSymbol,
+    required this.onSymbolChanged,
+  });
 
   @override
   State<SignalScreen> createState() => _SignalScreenState();
@@ -37,7 +44,7 @@ class _SignalScreenState extends State<SignalScreen> {
   String? _errorMessage;
   TradingSignal? _signal;
   List<Candle> _candles = [];
-  String _activeSymbol = AppConstants.defaultSymbol;
+  late String _activeSymbol;
 
   // Rewarded ad
   RewardedAd? _rewardedAd;
@@ -47,25 +54,34 @@ class _SignalScreenState extends State<SignalScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSymbol();
+    _activeSymbol = widget.activeSymbol;
     _loadRewardedAd();
+    _loadData();
   }
 
+
+  @override
+  void didUpdateWidget(covariant SignalScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeSymbol != widget.activeSymbol) {
+      setState(() => _activeSymbol = widget.activeSymbol);
+      _loadData();
+    }
+  }
   @override
   void dispose() {
     _rewardedAd?.dispose();
     super.dispose();
   }
 
-  Future<void> _loadSymbol() async {
+  Future<void> _loadData() async {
     final sym = await _storage.getSelectedSymbol();
     setState(() => _activeSymbol = sym);
     _loadSignal();
   }
 
   void _onSymbolChanged(String symbol) {
-    setState(() => _activeSymbol = symbol);
-    _loadSignal();
+    widget.onSymbolChanged(symbol);
   }
 
   void _loadRewardedAd() {

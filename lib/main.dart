@@ -10,19 +10,10 @@ import 'screens/signal_screen.dart';
 import 'screens/alerts_screen.dart';
 import 'screens/settings_screen.dart';
 
-/// Gold Signal AI — XAUUSD Gold Trading Indicator
-///
-/// Entry point for the app. Initializes services, configures the dark gold/black
-/// Material Design 3 theme, and sets up bottom navigation across 5 screens.
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize Mobile Ads SDK
   MobileAds.instance.initialize();
-
-  // Initialize local storage
   await StorageService().init();
-
   runApp(const GoldSignalAIApp());
 }
 
@@ -40,9 +31,8 @@ class GoldSignalAIApp extends StatelessWidget {
   }
 }
 
-/// Main navigation scaffold with bottom navigation bar.
-///
-/// Hosts 5 tabs: Home, Chart, Signal, Alerts, Settings.
+/// Main navigation — holds the single source of truth for the active symbol.
+/// All tabs receive the same symbol and call onSymbolChanged to update all tabs together.
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
 
@@ -52,27 +42,58 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
+  String _activeSymbol = AppConstants.defaultSymbol;
+  bool _symbolLoaded = false;
 
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    ChartScreen(),
-    SignalScreen(),
-    AlertsScreen(),
-    SettingsScreen(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadSymbol();
+  }
+
+  Future<void> _loadSymbol() async {
+    final sym = await StorageService().getSelectedSymbol();
+    setState(() {
+      _activeSymbol = sym;
+      _symbolLoaded = true;
+    });
+  }
+
+  /// Called by any tab when user picks a new symbol.
+  /// Persists to storage and rebuilds all tabs with the new symbol.
+  void _onSymbolChanged(String symbol) async {
+    await StorageService().setSelectedSymbol(symbol);
+    setState(() => _activeSymbol = symbol);
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Don't render screens until symbol is loaded (avoids flash with wrong symbol)
+    if (!_symbolLoaded) {
+      return Scaffold(
+        backgroundColor: AppTheme.black,
+        body: const Center(
+          child: CircularProgressIndicator(color: AppTheme.gold),
+        ),
+      );
+    }
+
+    final screens = [
+      HomeScreen(activeSymbol: _activeSymbol, onSymbolChanged: _onSymbolChanged),
+      ChartScreen(activeSymbol: _activeSymbol, onSymbolChanged: _onSymbolChanged),
+      SignalScreen(activeSymbol: _activeSymbol, onSymbolChanged: _onSymbolChanged),
+      AlertsScreen(activeSymbol: _activeSymbol, onSymbolChanged: _onSymbolChanged),
+      SettingsScreen(onSymbolChanged: _onSymbolChanged),
+    ];
+
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: screens,
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          setState(() => _currentIndex = index);
-        },
+        onDestinationSelected: (index) => setState(() => _currentIndex = index),
         backgroundColor: AppTheme.blackLight,
         indicatorColor: AppTheme.gold.withOpacity(0.15),
         surfaceTintColor: Colors.transparent,
