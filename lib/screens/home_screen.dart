@@ -10,15 +10,18 @@ import '../widgets/price_card.dart';
 import '../widgets/symbol_selector.dart';
 
 /// Home screen — fast price dashboard only.
-/// Signal analysis has been moved to the Signal tab to keep Home loading fast.
+/// Signal analysis is on Signal tab (index 2).
+/// Alerts are on Alerts tab (index 3).
 class HomeScreen extends StatefulWidget {
   final String activeSymbol;
   final void Function(String) onSymbolChanged;
+  final void Function(int) onNavigateToTab;
 
   const HomeScreen({
     super.key,
     required this.activeSymbol,
     required this.onSymbolChanged,
+    required this.onNavigateToTab,
   });
 
   @override
@@ -34,7 +37,6 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _errorMessage;
   late String _activeSymbol;
 
-  // Price data
   double _price = 0;
   double _dailyChange = 0;
   double _dailyChangePercent = 0;
@@ -43,10 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
   double _dailyOpen = 0;
   int _refreshInterval = AppConstants.defaultRefreshInterval;
 
-  // Auto-refresh timer
   Timer? _refreshTimer;
-
-  // AdMob banner
   BannerAd? _bannerAd;
   bool _bannerAdLoaded = false;
 
@@ -93,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadPremium() async {
     final premium = await _storage.isPremium();
-    setState(() => _isPremium = premium);
+    if (mounted) setState(() => _isPremium = premium);
   }
 
   Future<void> _loadData() async {
@@ -101,32 +100,32 @@ class _HomeScreenState extends State<HomeScreen> {
       _isLoading = true;
       _errorMessage = null;
     });
-
     try {
-      // Run both fast calls in parallel
       final results = await Future.wait([
         _api.getRealTimePrice(symbol: _activeSymbol),
         _api.getQuote(symbol: _activeSymbol),
       ]);
-
       final priceData = results[0];
       final quote = results[1];
-
-      setState(() {
-        _price = double.parse(priceData['price'].toString());
-        _dailyOpen = double.parse(quote['open'].toString());
-        _dailyHigh = double.parse(quote['high'].toString());
-        _dailyLow = double.parse(quote['low'].toString());
-        _dailyChange = double.parse((quote['change'] ?? '0').toString());
-        _dailyChangePercent =
-            double.parse((quote['percent_change'] ?? '0').toString());
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _price = double.parse(priceData['price'].toString());
+          _dailyOpen = double.parse(quote['open'].toString());
+          _dailyHigh = double.parse(quote['high'].toString());
+          _dailyLow = double.parse(quote['low'].toString());
+          _dailyChange = double.parse((quote['change'] ?? '0').toString());
+          _dailyChangePercent =
+              double.parse((quote['percent_change'] ?? '0').toString());
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString();
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -139,13 +138,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _applyRefreshInterval() async {
     final interval = await _storage.getRefreshInterval();
-    setState(() => _refreshInterval = interval);
+    if (mounted) setState(() => _refreshInterval = interval);
     _startAutoRefresh(interval);
     _loadData();
-  }
-
-  void _onSymbolChanged(String symbol) {
-    widget.onSymbolChanged(symbol);
   }
 
   @override
@@ -177,7 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
           SymbolSelector(
             selectedSymbol: _activeSymbol,
             compact: true,
-            onSymbolChanged: _onSymbolChanged,
+            onSymbolChanged: widget.onSymbolChanged,
           ),
           IconButton(
             icon: const Icon(Icons.refresh, color: AppTheme.gold),
@@ -190,8 +185,7 @@ class _HomeScreenState extends State<HomeScreen> {
         color: AppTheme.gold,
         onRefresh: _loadData,
         child: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: AppTheme.gold))
+            ? const Center(child: CircularProgressIndicator(color: AppTheme.gold))
             : _errorMessage != null
                 ? _buildError()
                 : _buildContent(inst),
@@ -236,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildContent(dynamic inst) {
+  Widget _buildContent(TradingInstrument inst) {
     final isPositive = _dailyChange >= 0;
 
     return ListView(
@@ -271,109 +265,24 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 16),
 
-        // Signal tab CTA card
-        GestureDetector(
-          onTap: () {
-            // Signal is tab index 2 — notify parent to switch
-            // We use a workaround via symbol changed callback naming trick
-            // The NavigationBar handles this via its own state
-          },
-          child: Card(
-            color: AppTheme.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: AppTheme.gold.withOpacity(0.4)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppTheme.gold.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.insights, color: AppTheme.gold, size: 28),
-                  ),
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Trading Signal & Analysis',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          'BUY / SELL / WAIT signal with EMA, RSI, MACD and more',
-                          style: TextStyle(color: Colors.white54, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.arrow_forward_ios,
-                      color: AppTheme.gold, size: 16),
-                ],
-              ),
-            ),
-          ),
+        // ── Signal tab CTA — tappable, goes to tab index 2 ──────────────────
+        _navCard(
+          icon: Icons.insights,
+          iconColor: AppTheme.gold,
+          title: 'Trading Signal & Analysis',
+          subtitle: 'BUY / SELL / WAIT with EMA, RSI, MACD and more',
+          onTap: () => widget.onNavigateToTab(2),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
 
-        // Price alerts CTA card
-        Card(
-          color: AppTheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: AppTheme.goldDark.withOpacity(0.3)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppTheme.goldDark.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.notifications_active,
-                      color: AppTheme.goldDark, size: 28),
-                ),
-                const SizedBox(width: 16),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Price Alerts',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Get notified even when app is closed',
-                        style: TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.arrow_forward_ios,
-                    color: AppTheme.goldDark, size: 16),
-              ],
-            ),
-          ),
+        // ── Alerts tab CTA — tappable, goes to tab index 3 ──────────────────
+        _navCard(
+          icon: Icons.notifications_active,
+          iconColor: AppTheme.goldDark,
+          title: 'Price Alerts',
+          subtitle: 'Get notified even when app is closed',
+          onTap: () => widget.onNavigateToTab(3),
         ),
-
         const SizedBox(height: 16),
 
         // Disclaimer
@@ -401,11 +310,64 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _navCard({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Card(
+        color: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: iconColor.withOpacity(0.35)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: iconColor, size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15)),
+                    const SizedBox(height: 4),
+                    Text(subtitle,
+                        style: const TextStyle(
+                            color: Colors.white54, fontSize: 12)),
+                  ],
+                ),
+              ),
+              Icon(Icons.arrow_forward_ios, color: iconColor, size: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _statTile(String label, String value, Color color) {
     return Expanded(
       child: Card(
         color: AppTheme.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           child: Column(
