@@ -17,21 +17,12 @@ void main() async {
   MobileAds.instance.initialize();
   await StorageService().init();
 
-  // Register WorkManager background task for price alerts
-  // This runs even when the app is closed or the phone is locked
-  await Workmanager().initialize(
-    callbackDispatcher,
-    isInDebugMode: false,
-  );
-
-  // Schedule periodic alert check every 15 minutes (minimum WorkManager interval)
+  await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
   await Workmanager().registerPeriodicTask(
     'price-alert-check',
     kAlertCheckTask,
     frequency: const Duration(minutes: 15),
-    constraints: Constraints(
-      networkType: NetworkType.connected,
-    ),
+    constraints: Constraints(networkType: NetworkType.connected),
     existingWorkPolicy: ExistingWorkPolicy.keep,
   );
 
@@ -52,7 +43,6 @@ class GoldSignalAIApp extends StatelessWidget {
   }
 }
 
-/// Main navigation — holds the single source of truth for the active symbol.
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
 
@@ -84,19 +74,26 @@ class _MainNavigationState extends State<MainNavigation> {
     setState(() => _activeSymbol = symbol);
   }
 
+  /// Called by HomeScreen cards to jump to a specific tab index
+  void _goToTab(int index) {
+    setState(() => _currentIndex = index);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_symbolLoaded) {
       return Scaffold(
         backgroundColor: AppTheme.black,
-        body: const Center(
-          child: CircularProgressIndicator(color: AppTheme.gold),
-        ),
+        body: const Center(child: CircularProgressIndicator(color: AppTheme.gold)),
       );
     }
 
     final screens = [
-      HomeScreen(activeSymbol: _activeSymbol, onSymbolChanged: _onSymbolChanged),
+      HomeScreen(
+        activeSymbol: _activeSymbol,
+        onSymbolChanged: _onSymbolChanged,
+        onNavigateToTab: _goToTab,
+      ),
       ChartScreen(activeSymbol: _activeSymbol, onSymbolChanged: _onSymbolChanged),
       SignalScreen(activeSymbol: _activeSymbol, onSymbolChanged: _onSymbolChanged),
       AlertsScreen(activeSymbol: _activeSymbol, onSymbolChanged: _onSymbolChanged),
@@ -104,10 +101,7 @@ class _MainNavigationState extends State<MainNavigation> {
     ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: screens,
-      ),
+      body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),
