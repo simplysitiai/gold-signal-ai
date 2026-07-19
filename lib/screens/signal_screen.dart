@@ -1,12 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../models/candle.dart';
 import '../models/signal.dart';
+import '../models/indicator_data.dart';
 import '../services/api_service.dart';
 import '../services/signal_engine.dart';
 import '../services/indicator_service.dart';
-import '../models/indicator_data.dart';
 import '../services/storage_service.dart';
 import '../utils/constants.dart';
 import '../utils/theme.dart';
@@ -14,14 +15,8 @@ import '../widgets/signal_card.dart';
 import '../widgets/indicator_card.dart';
 import '../widgets/symbol_selector.dart';
 
-/// Signal screen — full signal engine output with detailed indicator breakdown.
-///
-/// Supports switching between any supported instrument via the symbol selector.
-/// Displays:
-/// - The BUY/SELL/WAIT signal with confidence score
-/// - Individual indicator cards (EMA, RSI, MACD, Bollinger Bands, ATR, S/R)
-/// - A "Rewarded Analysis" button (watch an ad for deeper analysis)
-/// - Disclaimer text
+/// Signal screen — full signal engine output with indicator breakdown.
+/// Completely rebuilt to fix blank screen bug.
 class SignalScreen extends StatefulWidget {
   final String activeSymbol;
   final void Function(String) onSymbolChanged;
@@ -36,13 +31,15 @@ class SignalScreen extends StatefulWidget {
   State<SignalScreen> createState() => _SignalScreenState();
 }
 
-class _SignalScreenState extends State<SignalScreen> {
+class _SignalScreenState extends State<SignalScreen>
+    with AutomaticKeepAliveClientMixin {
   final ApiService _api = ApiService();
-  final StorageService _storage = StorageService();
 
-  bool _isLoading = true;
+  bool _isLoading = false;
+  bool _hasLoaded = false;
   String? _errorMessage;
   TradingSignal? _signal;
+  IndicatorData? _indicators;
   List<Candle> _candles = [];
   late String _activeSymbol;
 
@@ -51,35 +48,44 @@ class _SignalScreenState extends State<SignalScreen> {
   bool _rewardedAdLoaded = false;
   bool _premiumAnalysisUnlocked = false;
 
+  // Auto-refresh every 5 minutes
+  Timer? _refreshTimer;
+
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   void initState() {
     super.initState();
     _activeSymbol = widget.activeSymbol;
     _loadRewardedAd();
-    _loadData();
+    _loadSignal();
+    _refreshTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (_) => _loadSignal(),
+    );
   }
-
 
   @override
   void didUpdateWidget(covariant SignalScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.activeSymbol != widget.activeSymbol) {
-      setState(() => _activeSymbol = widget.activeSymbol);
-      _loadData();
+      setState(() {
+        _activeSymbol = widget.activeSymbol;
+        _signal = null;
+        _indicators = null;
+        _candles = [];
+        _hasLoaded = false;
+      });
+      _loadSignal();
     }
   }
+
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _rewardedAd?.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadData() async {
-    _loadSignal();
-  }
-
-  void _onSymbolChanged(String symbol) {
-    widget.onSymbolChanged(symbol);
   }
 
   void _loadRewardedAd() {
@@ -87,20 +93,22 @@ class _SignalScreenState extends State<SignalScreen> {
       adUnitId: AppConstants.rewardedAdUnitId,
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
-        onAdLoaded: (ad) => setState(() {
-          _rewardedAd = ad;
-          _rewardedAdLoaded = true;
-        }),
+        onAdLoaded: (ad) {
+          if (mounted) setState(() { _rewardedAd = ad; _rewardedAdLoaded = true; });
+        },
         onAdFailedToLoad: (error) => debugPrint('Rewarded ad failed: $error'),
       ),
     );
   }
 
   Future<void> _loadSignal() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    if (_isLoading) return;
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
       final candles = await _api.getTimeSeries(
@@ -108,342 +116,355 @@ class _SignalScreenState extends State<SignalScreen> {
         outputsize: 200,
         symbol: _activeSymbol,
       );
-      final signal = SignalEngine.analyze(candles);
 
-      setState(() {
-        _candles = candles;
-        _signal = signal;
-        _isLoading = false;
-      });
+      if (candles.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'No candle data returned from API.\nCheck your API key in Settings.';
+            _isLoading = false;
+            _hasLoaded = true;
+          });
+        }
+        return;
+      }
+
+      final signal = SignalEngine.analyze(candles);
+      final indicators = candles.length >= 20
+          ? IndicatorService.calculateAll(candles)
+          : null;
+
+      if (mounted) {
+        setState(() {
+          _candles = candles;
+          _signal = signal;
+          _indicators = indicators;
+          _isLoading = false;
+          _hasLoaded = true;
+          _errorMessage = null;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _errorMessage = e.toString();
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load signal data.\n\n${e.toString()}';
+          _isLoading = false;
+          _hasLoaded = true;
+        });
+      }
     }
   }
 
   void _showRewardedAd() {
-    if (_rewardedAd == null) return;
-
-    _rewardedAd!.show(
+    _rewardedAd?.show(
       onUserEarnedReward: (ad, reward) {
-        setState(() => _premiumAnalysisUnlocked = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Deep analysis unlocked!'),
-            backgroundColor: AppTheme.green,
-          ),
-        );
+        if (mounted) {
+          setState(() => _premiumAnalysisUnlocked = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Deep analysis unlocked!'),
+              backgroundColor: AppTheme.green,
+            ),
+          );
+        }
       },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final displaySymbol = AppConstants.availableSymbols
-        .firstWhere((i) => i.symbol == _activeSymbol,
-            orElse: () => AppConstants.availableSymbols.first)
-        .display;
+    super.build(context);
+    final inst = AppConstants.availableSymbols.firstWhere(
+      (i) => i.symbol == _activeSymbol,
+      orElse: () => AppConstants.availableSymbols.first,
+    );
 
     return Scaffold(
       backgroundColor: AppTheme.black,
       appBar: AppBar(
-        title: Text('$displaySymbol Signal'),
+        title: Text('${inst.display} Signal'),
         actions: [
           SymbolSelector(
-              selectedSymbol: _activeSymbol,
-              compact: true, onSymbolChanged: _onSymbolChanged),
+            selectedSymbol: _activeSymbol,
+            compact: true,
+            onSymbolChanged: widget.onSymbolChanged,
+          ),
           IconButton(
-            icon: const Icon(Icons.refresh, color: AppTheme.gold),
-            onPressed: _loadSignal,
-            tooltip: 'Refresh',
+            icon: _isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        color: AppTheme.gold, strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh, color: AppTheme.gold),
+            onPressed: _isLoading ? null : _loadSignal,
+            tooltip: 'Refresh Signal',
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.gold))
-          : _errorMessage != null
-              ? _buildErrorView()
-              : _buildContent(),
+      body: _buildBody(),
     );
   }
 
-  Widget _buildContent() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Main signal card
-        if (_signal != null)
-          SignalCard(signal: _signal!)
-        else
-          Card(
-            color: AppTheme.surface,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  const Icon(Icons.insights_outlined, color: AppTheme.gold, size: 48),
-                  const SizedBox(height: 12),
-                  const Text('No signal available', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  const Text('Tap refresh to load signal data', style: TextStyle(color: Colors.white54, fontSize: 12)),
-                  const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: _loadSignal,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Refresh Signal'),
-                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.gold, foregroundColor: AppTheme.black),
-                  ),
-                ],
-              ),
+  Widget _buildBody() {
+    // First load — show spinner
+    if (!_hasLoaded && _isLoading) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: AppTheme.gold),
+            const SizedBox(height: 16),
+            Text(
+              'Analyzing ${_activeSymbol.replaceAll('/', '')}...',
+              style: const TextStyle(color: Colors.white54, fontSize: 14),
             ),
-          ),
-        const SizedBox(height: 16),
+          ],
+        ),
+      );
+    }
 
-        // Rewarded ad section
-        if (!_premiumAnalysisUnlocked) ...[
-          Card(
-            color: AppTheme.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: AppTheme.goldDark.withOpacity(0.3)),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Icon(Icons.lock_outline, color: AppTheme.gold, size: 32),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Deep Analysis Locked',
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Watch a short ad to unlock detailed indicator breakdown',
-                    style: TextStyle(color: Colors.white54, fontSize: 12),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  ElevatedButton.icon(
-                    onPressed: _rewardedAdLoaded ? _showRewardedAd : null,
-                    icon: const Icon(Icons.play_circle_outline),
-                    label: const Text('Watch Ad to Unlock'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.gold,
-                      foregroundColor: AppTheme.black,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-
-        // Detailed indicator breakdown
-        if (_candles.length >= 20) ...[
-          const Text(
-            'INDICATOR BREAKDOWN',
-            style: TextStyle(
-              color: Colors.white38,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _buildDetailedIndicators(),
-        ] else ...[
-          Card(
-            color: AppTheme.surface,
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Not enough candle data for full indicator analysis.',
-                style: TextStyle(color: Colors.white54),
+    // Error state
+    if (_errorMessage != null && _signal == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off, color: AppTheme.red, size: 56),
+              const SizedBox(height: 16),
+              const Text('Signal unavailable',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(
+                _errorMessage!,
+                style: const TextStyle(color: Colors.white54, fontSize: 13),
                 textAlign: TextAlign.center,
               ),
-            ),
-          ),
-        ],
-
-        const SizedBox(height: 16),
-
-        // Premium analysis (if unlocked)
-        if (_premiumAnalysisUnlocked && _candles.length >= 50) ...[
-          _buildPremiumAnalysis(),
-          const SizedBox(height: 16),
-        ],
-
-        // Disclaimer
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppTheme.red.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppTheme.red.withOpacity(0.15)),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.warning_amber_rounded, color: AppTheme.red, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  appDisclaimer,
-                  style: const TextStyle(color: Colors.white38, fontSize: 10),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: _loadSignal,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Try Again'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.gold,
+                  foregroundColor: AppTheme.black,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                 ),
               ),
             ],
           ),
         ),
-      ],
+      );
+    }
+
+    // Loaded — show content (with optional refresh indicator overlay)
+    return RefreshIndicator(
+      color: AppTheme.gold,
+      onRefresh: _loadSignal,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // ── Main signal card ───────────────────────────────────────────
+          if (_signal != null) SignalCard(signal: _signal!),
+          const SizedBox(height: 16),
+
+          // ── Rewarded ad unlock section ─────────────────────────────────
+          if (!_premiumAnalysisUnlocked)
+            _buildUnlockCard(),
+          if (!_premiumAnalysisUnlocked) const SizedBox(height: 16),
+
+          // ── Indicator breakdown ────────────────────────────────────────
+          if (_indicators != null) ...[
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'INDICATOR BREAKDOWN',
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ),
+            _buildIndicators(_indicators!),
+            const SizedBox(height: 16),
+          ],
+
+          // ── Premium analysis ───────────────────────────────────────────
+          if (_premiumAnalysisUnlocked && _indicators != null) ...[
+            _buildPremiumAnalysis(_indicators!),
+            const SizedBox(height: 16),
+          ],
+
+          // ── Disclaimer ─────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppTheme.red.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppTheme.red.withOpacity(0.15)),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, color: AppTheme.red, size: 16),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    appDisclaimer,
+                    style: TextStyle(color: Colors.white38, fontSize: 10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  /// Build detailed indicator cards from the candle data
-  Widget _buildDetailedIndicators() {
-    final data = IndicatorService.calculateAll(_candles);
-    final fmt = (double v) => v.toStringAsFixed(2);
+  Widget _buildUnlockCard() {
+    return Card(
+      color: AppTheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: AppTheme.goldDark.withOpacity(0.3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            const Icon(Icons.lock_outline, color: AppTheme.gold, size: 32),
+            const SizedBox(height: 8),
+            const Text('Deep Analysis Locked',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            const Text(
+              'Watch a short ad to unlock full indicator details',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton.icon(
+              onPressed: _rewardedAdLoaded ? _showRewardedAd : null,
+              icon: const Icon(Icons.play_circle_outline),
+              label: Text(_rewardedAdLoaded ? 'Watch Ad to Unlock' : 'Loading ad...'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.gold,
+                foregroundColor: AppTheme.black,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildIndicators(IndicatorData data) {
+    String fmt(double v) => v.toStringAsFixed(2);
 
     return Column(
       children: [
-        // EMA
         IndicatorCard(
           title: 'EMA 20 vs EMA 50',
           value: '${fmt(data.ema20)} / ${fmt(data.ema50)}',
-          subtitle: data.emaBullishCross ? 'Bullish Cross' : 'Bearish Cross',
+          subtitle: data.emaBullishCross ? 'Bullish Cross ↑' : 'Bearish Cross ↓',
           indicatorColor: data.emaBullishCross ? AppTheme.green : AppTheme.red,
         ),
         const SizedBox(height: 8),
-
-        // RSI
         IndicatorCard(
           title: 'RSI (14)',
           value: data.rsi.toStringAsFixed(1),
           subtitle: data.rsiOversold
-              ? 'Oversold'
+              ? 'Oversold — potential BUY'
               : data.rsiOverbought
-                  ? 'Overbought'
-                  : 'Neutral',
+                  ? 'Overbought — potential SELL'
+                  : 'Neutral zone',
           indicatorColor: data.rsiOversold
               ? AppTheme.green
               : data.rsiOverbought
                   ? AppTheme.red
                   : AppTheme.gold,
-          child: _buildRsiBar(data.rsi),
+          child: _rsiBar(data.rsi),
         ),
         const SizedBox(height: 8),
-
-        // MACD
         IndicatorCard(
           title: 'MACD (12, 26, 9)',
-          value: '${fmt(data.macdLine)}',
-          subtitle: 'Signal: ${fmt(data.macdSignal)}',
+          value: fmt(data.macdLine),
+          subtitle: 'Signal: ${fmt(data.macdSignal)}  |  Hist: ${fmt(data.macdHistogram)}',
           indicatorColor: data.macdBullishCross ? AppTheme.green : AppTheme.red,
         ),
         const SizedBox(height: 8),
-
-        // Bollinger Bands
         IndicatorCard(
-          title: 'Bollinger Bands (20, 2)',
-          value: '${fmt(data.bbMiddle)}',
-          subtitle: 'U: ${fmt(data.bbUpper)} L: ${fmt(data.bbLower)}',
-          indicatorColor: AppTheme.gold,
-          child: _buildBollingerBar(data),
+          title: 'Bollinger Bands (20, 2σ)',
+          value: fmt(data.bbMiddle),
+          subtitle: 'Upper: ${fmt(data.bbUpper)}  |  Lower: ${fmt(data.bbLower)}',
+          indicatorColor: data.bbPercentB < 0.2
+              ? AppTheme.green
+              : data.bbPercentB > 0.8
+                  ? AppTheme.red
+                  : AppTheme.gold,
         ),
         const SizedBox(height: 8),
-
-        // ATR
         IndicatorCard(
           title: 'ATR (14)',
           value: fmt(data.atr),
-          subtitle: 'Volatility',
-          indicatorColor: AppTheme.goldDark,
+          subtitle: 'Average True Range — volatility measure',
+          indicatorColor: AppTheme.gold,
         ),
         const SizedBox(height: 8),
-
-        // Support & Resistance
         IndicatorCard(
-          title: 'Support / Resistance',
-          value: '${fmt(data.support)}',
+          title: 'Support & Resistance',
+          value: 'S: ${fmt(data.support)}',
           subtitle: 'R: ${fmt(data.resistance)}',
-          indicatorColor: Colors.blue,
+          indicatorColor: AppTheme.gold,
         ),
       ],
     );
   }
 
-  /// RSI visual bar (0-100 scale)
-  Widget _buildRsiBar(double rsi) {
-    return Column(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: (rsi / 100).clamp(0.0, 1.0),
-            backgroundColor: Colors.white10,
-            valueColor: AlwaysStoppedAnimation(
-              rsi < 30 ? AppTheme.green : rsi > 70 ? AppTheme.red : AppTheme.gold,
+  Widget _rsiBar(double rsi) {
+    final clamped = rsi.clamp(0.0, 100.0);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: clamped / 100,
+              minHeight: 6,
+              backgroundColor: Colors.white12,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                rsi < 30
+                    ? AppTheme.green
+                    : rsi > 70
+                        ? AppTheme.red
+                        : AppTheme.gold,
+              ),
             ),
-            minHeight: 6,
           ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Oversold (30)', style: TextStyle(color: Colors.white24, fontSize: 9)),
-            Text('Overbought (70)', style: TextStyle(color: Colors.white24, fontSize: 9)),
-          ],
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  /// Bollinger Bands visual bar
-  Widget _buildBollingerBar(IndicatorData data) {
-    final range = data.bbUpper - data.bbLower;
-    if (range == 0) return const SizedBox.shrink();
-
-    // Calculate position of current price within the bands
-    final lastClose = _candles.last.close;
-    final pos = ((lastClose - data.bbLower) / range * 100).clamp(0.0, 100.0);
-
-    return Column(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-            value: pos / 100,
-            backgroundColor: Colors.white10,
-            valueColor: const AlwaysStoppedAnimation(AppTheme.gold),
-            minHeight: 6,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Lower: ${data.bbLower.toStringAsFixed(2)}',
-                style: const TextStyle(color: Colors.white24, fontSize: 9)),
-            Text('Upper: ${data.bbUpper.toStringAsFixed(2)}',
-                style: const TextStyle(color: Colors.white24, fontSize: 9)),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// Premium deep analysis section
-  Widget _buildPremiumAnalysis() {
-    final data = IndicatorService.calculateAll(_candles);
-    final fmt = (double v) => v.toStringAsFixed(2);
+  Widget _buildPremiumAnalysis(IndicatorData data) {
+    String fmt(double v) => v.toStringAsFixed(2);
+    final signal = _signal;
+    if (signal == null) return const SizedBox.shrink();
 
     return Card(
-      color: AppTheme.gold.withOpacity(0.05),
+      color: AppTheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(color: AppTheme.gold.withOpacity(0.3)),
@@ -453,94 +474,51 @@ class _SignalScreenState extends State<SignalScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.auto_awesome, color: AppTheme.gold, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  'DEEP ANALYSIS',
+            Row(children: [
+              const Icon(Icons.star, color: AppTheme.gold, size: 18),
+              const SizedBox(width: 6),
+              const Text('PREMIUM ANALYSIS',
                   style: TextStyle(
-                    color: AppTheme.gold,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-              ],
-            ),
+                      color: AppTheme.gold,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                      letterSpacing: 1.2)),
+            ]),
             const SizedBox(height: 12),
-            // Trend analysis
-            _buildAnalysisRow('Trend', data.emaBullishCross ? 'Bullish' : 'Bearish'),
-            _buildAnalysisRow('Momentum', data.rsi < 30
-                ? 'Oversold (reversal likely)'
-                : data.rsi > 70
-                    ? 'Overbought (reversal likely)'
-                    : 'Neutral'),
-            _buildAnalysisRow('Volatility', data.atr > 5
-                ? 'High (${fmt(data.atr)})'
-                : 'Low (${fmt(data.atr)})'),
-            _buildAnalysisRow('BB Position', data.bbUpper > 0 && _candles.isNotEmpty
-                ? 'Price at ${((_candles.last.close - data.bbLower) / (data.bbUpper - data.bbLower) * 100).clamp(0, 100).toStringAsFixed(0)}% of range'
-                : 'N/A'),
-            _buildAnalysisRow('Key Level', _candles.isNotEmpty
-                ? 'Support: ${fmt(data.support)} | Resistance: ${fmt(data.resistance)}'
-                : 'N/A'),
+            _premiumRow('Signal', signal.signal),
+            _premiumRow('Confidence', '${signal.confidence.toStringAsFixed(0)}%'),
+            _premiumRow('EMA Trend', data.emaBullishCross ? 'Bullish' : 'Bearish'),
+            _premiumRow('RSI Reading', data.rsi.toStringAsFixed(1)),
+            _premiumRow('MACD Cross', data.macdBullishCross ? 'Bullish' : 'Bearish'),
+            _premiumRow('BB Position', data.bbPercentB < 0.2
+                ? 'Near Support'
+                : data.bbPercentB > 0.8
+                    ? 'Near Resistance'
+                    : 'Mid-range'),
+            _premiumRow('Support', fmt(data.support)),
+            _premiumRow('Resistance', fmt(data.resistance)),
+            _premiumRow('ATR Volatility', fmt(data.atr)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildAnalysisRow(String label, String value) {
+  Widget _premiumRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white54, fontSize: 13)),
-          Flexible(
-            child: Text(
-              value,
-              style: const TextStyle(color: Colors.white, fontSize: 13),
-              textAlign: TextAlign.right,
-            ),
-          ),
+          Text(label,
+              style:
+                  const TextStyle(color: Colors.white54, fontSize: 13)),
+          Text(value,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold)),
         ],
-      ),
-    );
-  }
-
-  Widget _buildErrorView() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.cloud_off, color: Colors.white38, size: 48),
-            const SizedBox(height: 16),
-            Text(
-              'Failed to load signal data',
-              style: TextStyle(color: Colors.white70, fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _errorMessage ?? '',
-              style: const TextStyle(color: Colors.white38, fontSize: 13),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _loadSignal,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.gold,
-                foregroundColor: AppTheme.black,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
