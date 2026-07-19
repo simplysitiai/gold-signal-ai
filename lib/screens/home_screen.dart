@@ -244,7 +244,8 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         // Main price card
         PriceCard(
-          symbol: _activeSymbol,
+          symbolDisplay: inst.display,
+          symbolKey: inst.symbol,
           price: _price,
           dailyChange: _dailyChange,
           dailyChangePercent: _dailyChangePercent,
