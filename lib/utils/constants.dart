@@ -81,6 +81,20 @@ class AppConstants {
     '1day':  'daily',
   };
 
+  // Chart settings
+  static const double defaultCandleWidth = 6.0;   // body width in px
+  static const double minCandleWidth = 2.0;
+  static const double maxCandleWidth = 12.0;
+
+  // Alert sound options
+  static const String alertSoundDefault = 'default';
+  static const String alertSoundBell     = 'bell';
+  static const String alertSoundCoin    = 'coin';
+  static const String alertSoundAlarm    = 'alarm';
+  static const String alertSoundWhistle  = 'whistle';
+  static const List<String> alertSounds = [alertSoundDefault, alertSoundBell, alertSoundCoin, alertSoundAlarm, alertSoundWhistle];
+  static const List<String> alertSoundLabels = ['Default', 'Bell', 'Coin', 'Alarm', 'Whistle'];
+
   // SharedPreferences keys
   static const String keyApiKey          = 'api_key';
   static const String keyPremium         = 'is_premium';
@@ -89,6 +103,8 @@ class AppConstants {
   static const String keyRefreshInterval = 'refresh_interval';
   static const String keyApiProvider     = 'api_provider';
   static const String keyAlphaVantageKey = 'alpha_vantage_key';
+  static const String keyCandleWidth    = 'candle_width';
+  static const String keyAlertSound    = 'alert_sound';
 
   // AdMob test IDs
   static const String bannerAdUnitId   = 'ca-app-pub-3940256099942544/6300978111';

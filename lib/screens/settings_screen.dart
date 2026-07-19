@@ -27,6 +27,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _currentAvKey = '';
   String _apiProvider = AppConstants.apiProviderTwelveData;
   int _refreshInterval = AppConstants.defaultRefreshInterval;
+  double _candleWidth = AppConstants.defaultCandleWidth;
+  String _alertSound = AppConstants.alertSoundDefault;
 
   @override
   void initState() {
@@ -40,6 +42,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _isPremium = await _storage.isPremium();
     _apiProvider = await _storage.getApiProvider();
     _refreshInterval = await _storage.getRefreshInterval();
+    _candleWidth = await _storage.getCandleWidth();
+    _alertSound = await _storage.getAlertSound();
 
     _tdKeyController.text = _currentTdKey == AppConstants.twelveDataDefaultKey ? '' : _currentTdKey;
     _avKeyController.text = _currentAvKey == AppConstants.alphaVantageDefaultKey ? '' : _currentAvKey;
@@ -87,6 +91,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() => _refreshInterval = minutes);
     final label = AppConstants.refreshIntervalLabels[AppConstants.refreshIntervals.indexOf(minutes)];
     _snack('Auto-refresh: $label', AppTheme.gold);
+  }
+
+  Future<void> _setCandleWidth(double width) async {
+    await _storage.setCandleWidth(width);
+    setState(() => _candleWidth = width);
+  }
+
+  Future<void> _setAlertSound(String sound) async {
+    await _storage.setAlertSound(sound);
+    setState(() => _alertSound = sound);
+    _snack('Alert sound: ${AppConstants.alertSoundLabels[AppConstants.alertSounds.indexOf(sound)]}', AppTheme.gold);
   }
 
   Future<void> _togglePremium(bool value) async {
@@ -252,6 +267,125 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                   ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // ── Chart Settings ──────────────────────────────────────────────────
+          _sectionHeader('CHART APPEARANCE'),
+          const SizedBox(height: 8),
+          Card(
+            color: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: AppTheme.goldDark.withOpacity(0.3)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.bar_chart, color: AppTheme.gold, size: 18),
+                      const SizedBox(width: 8),
+                      const Text('Candlestick Width', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Adjust the thickness of candle bodies', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text('Thin', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                      Expanded(
+                        child: Slider(
+                          value: _candleWidth,
+                          min: AppConstants.minCandleWidth,
+                          max: AppConstants.maxCandleWidth,
+                          divisions: 10,
+                          activeColor: AppTheme.gold,
+                          onChanged: (v) => setState(() => _candleWidth = v),
+                          onChangeEnd: _setCandleWidth,
+                        ),
+                      ),
+                      const Text('Thick', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                    ],
+                  ),
+                  Center(
+                    child: Text('Width: \${_candleWidth.toStringAsFixed(1)} px',
+                        style: const TextStyle(color: AppTheme.gold, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // ── Alert Sound ─────────────────────────────────────────────────────
+          _sectionHeader('ALERT SOUND'),
+          const SizedBox(height: 8),
+          Card(
+            color: AppTheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: AppTheme.goldDark.withOpacity(0.3)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.notifications_active, color: AppTheme.gold, size: 18),
+                      const SizedBox(width: 8),
+                      const Text('Notification Sound', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Sound played when a price alert triggers', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: List.generate(AppConstants.alertSounds.length, (i) {
+                      final sound = AppConstants.alertSounds[i];
+                      final label = AppConstants.alertSoundLabels[i];
+                      final selected = sound == _alertSound;
+                      return GestureDetector(
+                        onTap: () => _setAlertSound(sound),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: selected ? AppTheme.gold : AppTheme.blackLight,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: selected ? AppTheme.gold : AppTheme.goldDark.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                selected ? Icons.volume_up : Icons.volume_down,
+                                color: selected ? AppTheme.black : Colors.white70,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(label,
+                                  style: TextStyle(
+                                    color: selected ? AppTheme.black : Colors.white70,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  )),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
                 ],
               ),
             ),

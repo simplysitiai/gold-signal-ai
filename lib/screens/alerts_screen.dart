@@ -27,6 +27,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   List<PriceAlert> _alerts = [];
   double _currentPrice = 0;
   String _activeSymbol = AppConstants.defaultSymbol;
+  String _alertSound = AppConstants.alertSoundDefault;
   final _targetPriceController = TextEditingController();
 
   // Notification plugin
@@ -49,7 +50,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   Future<void> _loadSymbol() async {
     final sym = await _storage.getSelectedSymbol();
-    setState(() => _activeSymbol = sym);
+    final sound = await _storage.getAlertSound();
+    setState(() { _activeSymbol = sym; _alertSound = sound; });
     _loadAlerts();
     _fetchCurrentPrice();
   }
@@ -152,14 +154,23 @@ class _AlertsScreenState extends State<AlertsScreen> {
             orElse: () => AppConstants.availableSymbols.first)
         .display;
 
-    const androidDetails = AndroidNotificationDetails(
+    // Map sound name to raw resource
+    String soundName = '';
+    if (_alertSound == AppConstants.alertSoundBell) soundName = 'bell';
+    else if (_alertSound == AppConstants.alertSoundCoin) soundName = 'coin';
+    else if (_alertSound == AppConstants.alertSoundAlarm) soundName = 'alarm';
+    else if (_alertSound == AppConstants.alertSoundWhistle) soundName = 'whistle';
+
+    final androidDetails = AndroidNotificationDetails(
       'price_alerts',
       'Price Alerts',
       importance: Importance.high,
       priority: Priority.high,
-      color: Color(0xFFFFD700),
+      color: const Color(0xFFFFD700),
+      sound: soundName.isNotEmpty ? RawResourceAndroidNotificationSound(soundName) : null,
+      playSound: true,
     );
-    const details = NotificationDetails(android: androidDetails);
+    final details = NotificationDetails(android: androidDetails);
 
     await _notifications.show(
       alert.id.hashCode,

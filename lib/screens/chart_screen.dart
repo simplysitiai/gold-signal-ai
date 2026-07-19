@@ -30,6 +30,7 @@ class _ChartScreenState extends State<ChartScreen> {
   List<Candle> _candles = [];
   List<double> _ema20Values = [];
   List<double> _ema50Values = [];
+  double _candleWidth = AppConstants.defaultCandleWidth;
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -42,6 +43,8 @@ class _ChartScreenState extends State<ChartScreen> {
   Future<void> _loadSymbol() async {
     final sym = await _storage.getSelectedSymbol();
     setState(() => _activeSymbol = sym);
+    final cw = await _storage.getCandleWidth();
+    setState(() => _candleWidth = cw);
     _loadChartData();
   }
 
@@ -144,6 +147,7 @@ class _ChartScreenState extends State<ChartScreen> {
                               candles: _candles,
                               ema20Values: _ema20Values,
                               ema50Values: _ema50Values,
+                              candleWidth: _candleWidth,
                             ),
                             const SizedBox(height: 16),
                             _buildIndicatorSummary(),

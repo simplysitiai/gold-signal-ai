@@ -55,6 +55,20 @@ class StorageService {
   }
   Future<void> setRefreshInterval(int minutes) async => (await _p).setInt(AppConstants.keyRefreshInterval, minutes);
 
+  // ===== Candle Width (chart body thickness) =====
+  Future<double> getCandleWidth() async {
+    final p = await _p;
+    return p.getDouble(AppConstants.keyCandleWidth) ?? AppConstants.defaultCandleWidth;
+  }
+  Future<void> setCandleWidth(double width) async => (await _p).setDouble(AppConstants.keyCandleWidth, width);
+
+  // ===== Alert Sound =====
+  Future<String> getAlertSound() async {
+    final p = await _p;
+    return p.getString(AppConstants.keyAlertSound) ?? AppConstants.alertSoundDefault;
+  }
+  Future<void> setAlertSound(String sound) async => (await _p).setString(AppConstants.keyAlertSound, sound);
+
   // ===== Premium Status =====
   Future<bool> isPremium() async => (await _p).getBool(AppConstants.keyPremium) ?? false;
   Future<void> setPremium(bool value) async => (await _p).setBool(AppConstants.keyPremium, value);
