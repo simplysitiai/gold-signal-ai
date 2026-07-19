@@ -485,7 +485,7 @@ class _SignalScreenState extends State<SignalScreen>
                       letterSpacing: 1.2)),
             ]),
             const SizedBox(height: 12),
-            _premiumRow('Signal', signal.signal),
+            _premiumRow('Signal', signal.signalName),
             _premiumRow('Confidence', '${signal.confidence.toStringAsFixed(0)}%'),
             _premiumRow('EMA Trend', data.emaBullishCross ? 'Bullish' : 'Bearish'),
             _premiumRow('RSI Reading', data.rsi.toStringAsFixed(1)),
