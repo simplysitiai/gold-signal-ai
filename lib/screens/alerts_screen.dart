@@ -12,10 +12,8 @@ import '../widgets/symbol_selector.dart';
 
 /// Alerts screen — manage price alerts for any supported instrument.
 ///
-/// Users can set target prices and choose to be notified when the price
-/// crosses above or below that level. Alerts are stored locally via
-/// SharedPreferences and checked automatically every 60 seconds while
-/// the screen is active, and also on app resume.
+/// Alerts are checked automatically every 60 seconds while the screen is
+/// active, and immediately on app resume from background.
 class AlertsScreen extends StatefulWidget {
   final String activeSymbol;
   final void Function(String) onSymbolChanged;
@@ -54,9 +52,9 @@ class _AlertsScreenState extends State<AlertsScreen>
     _activeSymbol = widget.activeSymbol;
     WidgetsBinding.instance.addObserver(this);
     _initNotifications();
-    _loadAlerts();
     _loadAlertSound();
-    _fetchCurrentPrice().then((_) => _checkAlerts());
+    // Load alerts + price together, then check — ensures _alerts is populated first
+    _loadAlertsAndCheck();
     _startAutoCheck();
   }
 
@@ -64,16 +62,27 @@ class _AlertsScreenState extends State<AlertsScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _fetchCurrentPrice().then((_) => _checkAlerts());
+      _loadAlertsAndCheck();
     }
+  }
+
+  /// Single entry point: always load fresh alerts from storage FIRST,
+  /// then fetch price, then check. Guarantees _alerts is never stale.
+  Future<void> _loadAlertsAndCheck() async {
+    final alerts = await _storage.getAlerts();
+    if (!mounted) return;
+    setState(() => _alerts = alerts);
+
+    // Now fetch price and check against the freshly loaded list
+    await _fetchCurrentPrice();
+    if (!mounted) return;
+    await _checkAlertsAgainst(_alerts, _currentPrice);
   }
 
   void _startAutoCheck() {
     _checkTimer?.cancel();
-    // Check every 60 seconds automatically
-    _checkTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
-      await _fetchCurrentPrice();
-      _checkAlerts();
+    _checkTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      _loadAlertsAndCheck();
     });
   }
 
@@ -98,20 +107,14 @@ class _AlertsScreenState extends State<AlertsScreen>
 
   Future<void> _loadAlertSound() async {
     final sound = await _storage.getAlertSound();
-    setState(() => _alertSound = sound);
-  }
-
-  Future<void> _loadAlerts() async {
-    final alerts = await _storage.getAlerts();
-    setState(() => _alerts = alerts);
+    if (mounted) setState(() => _alertSound = sound);
   }
 
   Future<void> _fetchCurrentPrice() async {
     try {
       final data = await _api.getRealTimePrice(symbol: _activeSymbol);
       if (mounted) {
-        setState(
-            () => _currentPrice = double.parse(data['price'].toString()));
+        setState(() => _currentPrice = double.parse(data['price'].toString()));
       }
     } catch (_) {}
   }
@@ -144,7 +147,6 @@ class _AlertsScreenState extends State<AlertsScreen>
 
     await _storage.addAlert(alert);
     _targetPriceController.clear();
-    _loadAlerts();
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -155,43 +157,45 @@ class _AlertsScreenState extends State<AlertsScreen>
       ),
     );
 
-    // Immediately check if the new alert is already triggered
-    _checkAlerts();
+    // Reload and immediately check the new alert
+    _loadAlertsAndCheck();
   }
 
   Future<void> _deleteAlert(String id) async {
     await _storage.removeAlert(id);
-    _loadAlerts();
+    final alerts = await _storage.getAlerts();
+    if (mounted) setState(() => _alerts = alerts);
   }
 
-  Future<void> _checkAlerts() async {
-    if (_currentPrice == 0) return;
+  /// Check alerts against explicitly passed list + price to avoid stale state.
+  Future<void> _checkAlertsAgainst(
+      List<PriceAlert> alerts, double price) async {
+    if (price == 0) return;
 
     bool anyTriggered = false;
 
-    for (final alert in _alerts) {
+    for (final alert in alerts) {
       if (!alert.isActive || alert.triggered) continue;
 
-      bool shouldTrigger = false;
-      if (alert.isAbove && _currentPrice >= alert.targetPrice) {
-        shouldTrigger = true;
-      }
-      if (!alert.isAbove && _currentPrice <= alert.targetPrice) {
-        shouldTrigger = true;
-      }
+      final bool shouldTrigger =
+          (alert.isAbove && price >= alert.targetPrice) ||
+              (!alert.isAbove && price <= alert.targetPrice);
 
       if (shouldTrigger) {
-        await _showNotification(alert);
+        await _showNotification(alert, price);
         await _storage.markAlertTriggered(alert.id);
         anyTriggered = true;
       }
     }
 
-    // Reload list once after all checks so UI reflects triggered state
-    if (anyTriggered) _loadAlerts();
+    // Reload from storage so UI shows the updated triggered state
+    if (anyTriggered && mounted) {
+      final updated = await _storage.getAlerts();
+      if (mounted) setState(() => _alerts = updated);
+    }
   }
 
-  Future<void> _showNotification(PriceAlert alert) async {
+  Future<void> _showNotification(PriceAlert alert, double price) async {
     final displaySymbol = AppConstants.availableSymbols
         .firstWhere((i) => i.symbol == alert.symbol,
             orElse: () => AppConstants.availableSymbols.first)
@@ -221,11 +225,11 @@ class _AlertsScreenState extends State<AlertsScreen>
       '$displaySymbol Price Alert Triggered!',
       '$displaySymbol has ${alert.isAbove ? "risen above" : "fallen below"} '
           '\$${alert.targetPrice.toStringAsFixed(2)} '
-          '(current: \$${_currentPrice.toStringAsFixed(2)})',
+          '(current: \$${price.toStringAsFixed(2)})',
       details,
     );
 
-    // Also show an in-app snackbar so user sees it immediately
+    // In-app snackbar as immediate visual feedback
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -244,9 +248,11 @@ class _AlertsScreenState extends State<AlertsScreen>
   void didUpdateWidget(covariant AlertsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.activeSymbol != widget.activeSymbol) {
-      setState(() => _activeSymbol = widget.activeSymbol);
-      _loadAlerts();
-      _fetchCurrentPrice().then((_) => _checkAlerts());
+      setState(() {
+        _activeSymbol = widget.activeSymbol;
+        _currentPrice = 0;
+      });
+      _loadAlertsAndCheck();
     }
   }
 
@@ -276,10 +282,7 @@ class _AlertsScreenState extends State<AlertsScreen>
               onSymbolChanged: _onSymbolChanged),
           IconButton(
             icon: const Icon(Icons.refresh, color: AppTheme.gold),
-            onPressed: () async {
-              await _fetchCurrentPrice();
-              _checkAlerts();
-            },
+            onPressed: _loadAlertsAndCheck,
             tooltip: 'Check Alerts Now',
           ),
         ],
@@ -290,8 +293,8 @@ class _AlertsScreenState extends State<AlertsScreen>
           // Current price display
           Card(
             color: AppTheme.surface,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
@@ -300,15 +303,15 @@ class _AlertsScreenState extends State<AlertsScreen>
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('$displaySymbol',
+                      Text(displaySymbol,
                           style: const TextStyle(
                               color: AppTheme.gold,
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1.2)),
                       const Text('Current Price',
-                          style:
-                              TextStyle(color: Colors.white38, fontSize: 11)),
+                          style: TextStyle(
+                              color: Colors.white38, fontSize: 11)),
                     ],
                   ),
                   _currentPrice > 0
@@ -329,11 +332,12 @@ class _AlertsScreenState extends State<AlertsScreen>
               ),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
 
           // Auto-check indicator
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: AppTheme.surface,
               borderRadius: BorderRadius.circular(8),
@@ -345,7 +349,8 @@ class _AlertsScreenState extends State<AlertsScreen>
                 SizedBox(width: 8),
                 Text(
                   'Auto-checking every 60 seconds',
-                  style: TextStyle(color: Colors.white38, fontSize: 11),
+                  style:
+                      TextStyle(color: Colors.white38, fontSize: 11),
                 ),
               ],
             ),
@@ -376,19 +381,20 @@ class _AlertsScreenState extends State<AlertsScreen>
                   const SizedBox(height: 12),
                   TextField(
                     controller: _targetPriceController,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(
                           RegExp(r'^\d*\.?\d*')),
                     ],
-                    style:
-                        const TextStyle(color: Colors.white, fontSize: 16),
+                    style: const TextStyle(
+                        color: Colors.white, fontSize: 16),
                     decoration: InputDecoration(
                       hintText: _currentPrice > 0
                           ? 'e.g. ${_formatPrice(_currentPrice)}'
                           : 'Target price',
-                      hintStyle: const TextStyle(color: Colors.white24),
+                      hintStyle:
+                          const TextStyle(color: Colors.white24),
                       filled: true,
                       fillColor: Colors.white10,
                       border: OutlineInputBorder(
@@ -410,7 +416,8 @@ class _AlertsScreenState extends State<AlertsScreen>
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.green,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 12),
                           ),
                         ),
                       ),
@@ -418,12 +425,14 @@ class _AlertsScreenState extends State<AlertsScreen>
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: () => _addAlert(isAbove: false),
-                          icon: const Icon(Icons.arrow_downward, size: 16),
+                          icon:
+                              const Icon(Icons.arrow_downward, size: 16),
                           label: const Text('Alert Below'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.red,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 12),
                           ),
                         ),
                       ),
@@ -440,7 +449,7 @@ class _AlertsScreenState extends State<AlertsScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'ACTIVE ALERTS',
+                'ALERTS',
                 style: TextStyle(
                   color: Colors.white38,
                   fontSize: 12,
@@ -450,8 +459,8 @@ class _AlertsScreenState extends State<AlertsScreen>
               ),
               Text(
                 '${_alerts.where((a) => !a.triggered && a.isActive).length} active',
-                style:
-                    const TextStyle(color: Colors.white38, fontSize: 11),
+                style: const TextStyle(
+                    color: Colors.white38, fontSize: 11),
               ),
             ],
           ),
@@ -468,12 +477,12 @@ class _AlertsScreenState extends State<AlertsScreen>
                         color: Colors.white24, size: 36),
                     SizedBox(height: 8),
                     Text('No alerts set',
-                        style:
-                            TextStyle(color: Colors.white38, fontSize: 14)),
+                        style: TextStyle(
+                            color: Colors.white38, fontSize: 14)),
                     SizedBox(height: 4),
                     Text('Set a target price above to get notified',
-                        style:
-                            TextStyle(color: Colors.white24, fontSize: 12)),
+                        style: TextStyle(
+                            color: Colors.white24, fontSize: 12)),
                   ],
                 ),
               ),
@@ -508,7 +517,9 @@ class _AlertsScreenState extends State<AlertsScreen>
       ),
       child: ListTile(
         leading: Icon(
-          alert.triggered ? Icons.check_circle : Icons.notifications_active,
+          alert.triggered
+              ? Icons.check_circle
+              : Icons.notifications_active,
           color: alert.triggered ? Colors.white24 : color,
         ),
         title: Text(
@@ -523,23 +534,22 @@ class _AlertsScreenState extends State<AlertsScreen>
           alert.triggered
               ? 'Triggered ✓'
               : diff != null
-                  ? '\$${diff.toStringAsFixed(inst.decimals)} away from target'
-                  : 'Set ${_timeAgo(alert.createdAt)}',
+                  ? '\$${diff.toStringAsFixed(inst.decimals)} away'
+                  : _timeAgo(alert.createdAt),
           style: TextStyle(
             color: alert.triggered ? Colors.white24 : Colors.white54,
             fontSize: 11,
           ),
         ),
-        trailing: alert.triggered
-            ? IconButton(
-                icon:
-                    const Icon(Icons.delete_outline, color: Colors.white24),
-                onPressed: () => _deleteAlert(alert.id),
-              )
-            : IconButton(
-                icon: const Icon(Icons.close, color: Colors.white38),
-                onPressed: () => _deleteAlert(alert.id),
-              ),
+        trailing: IconButton(
+          icon: Icon(
+            alert.triggered
+                ? Icons.delete_outline
+                : Icons.close,
+            color: Colors.white38,
+          ),
+          onPressed: () => _deleteAlert(alert.id),
+        ),
       ),
     );
   }
