@@ -174,7 +174,32 @@ class _SignalScreenState extends State<SignalScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         // Main signal card
-        if (_signal != null) SignalCard(signal: _signal!),
+        if (_signal != null)
+          SignalCard(signal: _signal!)
+        else
+          Card(
+            color: AppTheme.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  const Icon(Icons.insights_outlined, color: AppTheme.gold, size: 48),
+                  const SizedBox(height: 12),
+                  const Text('No signal available', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                  const Text('Tap refresh to load signal data', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _loadSignal,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Refresh Signal'),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppTheme.gold, foregroundColor: AppTheme.black),
+                  ),
+                ],
+              ),
+            ),
+          ),
         const SizedBox(height: 16),
 
         // Rewarded ad section
@@ -219,7 +244,7 @@ class _SignalScreenState extends State<SignalScreen> {
         ],
 
         // Detailed indicator breakdown
-        if (_candles.length >= 50) ...[
+        if (_candles.length >= 20) ...[
           const Text(
             'INDICATOR BREAKDOWN',
             style: TextStyle(
