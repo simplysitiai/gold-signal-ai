@@ -47,6 +47,8 @@ class _HomeScreenState extends State<HomeScreen> {
   double _dailyHigh = 0;
   double _dailyLow = 0;
   double _dailyOpen = 0;
+  int _refreshInterval = AppConstants.defaultRefreshInterval;
+  double _candleWidth = AppConstants.defaultCandleWidth;
 
   // Signal data
   TradingSignal? _signal;

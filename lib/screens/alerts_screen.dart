@@ -47,6 +47,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
     _activeSymbol = widget.activeSymbol;
     _initNotifications();
     _loadAlerts();
+    _loadAlertSound();
   }
 
   Future<void> _initNotifications() async {
@@ -56,19 +57,13 @@ class _AlertsScreenState extends State<AlertsScreen> {
     await _notifications.initialize(initSettings);
   }
 
-  Future<void> _loadSymbol() async {
-    final sym = await _storage.getSelectedSymbol();
-    final sound = await _storage.getAlertSound();
-    setState(() { _activeSymbol = sym; _alertSound = sound; });
-    _loadAlerts();
-    _fetchCurrentPrice();
-  }
-
   void _onSymbolChanged(String symbol) {
     widget.onSymbolChanged(symbol);
-  });
-    _fetchCurrentPrice();
-    _loadAlerts();
+  }
+
+  Future<void> _loadAlertSound() async {
+    final sound = await _storage.getAlertSound();
+    setState(() => _alertSound = sound);
   }
 
   Future<void> _loadAlerts() async {

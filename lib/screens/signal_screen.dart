@@ -75,8 +75,6 @@ class _SignalScreenState extends State<SignalScreen> {
   }
 
   Future<void> _loadData() async {
-    final sym = await _storage.getSelectedSymbol();
-    setState(() => _activeSymbol = sym);
     _loadSignal();
   }
 
